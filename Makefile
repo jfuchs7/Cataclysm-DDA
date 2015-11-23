@@ -209,8 +209,10 @@ ifeq ($(NATIVE), osx)
   ifeq ($(LOCALIZE), 1)
     LDFLAGS += -lintl
     ifeq ($(MACPORTS), 1)
-      CXXFLAGS += -I$(shell ncursesw5-config --includedir)
-      LDFLAGS += -L$(shell ncursesw5-config --libdir)
+      ifneq ($(TILES), 1)
+        CXXFLAGS += -I$(shell ncursesw6-config --includedir)
+        LDFLAGS += -L$(shell ncursesw6-config --libdir)
+      endif
     endif
   endif
   TARGETSYSTEM=LINUX
@@ -270,6 +272,11 @@ ifdef MAPSIZE
     CXXFLAGS += -DMAPSIZE=$(MAPSIZE)
 endif
 
+ifeq ($(shell git rev-parse --is-inside-work-tree),true)
+  # We have a git repository, use git version
+  DEFINES += -DGIT_VERSION
+endif
+
 PKG_CONFIG = $(CROSS)pkg-config
 SDL2_CONFIG = $(CROSS)sdl2-config
 
@@ -285,20 +292,23 @@ ifdef SOUND
 		 -F$(HOME)/Library/Frameworks/SDL2_mixer.framework/Frameworks \
 		 -framework SDL2_mixer -framework Vorbis -framework Ogg
     else # libsdl build
-      CXXFLAGS += $(shell $(PKG_CONFIG) --cflags SDL2_mixer)
-      LDFLAGS += $(shell $(PKG_CONFIG) --libs SDL2_mixer)
-      LDFLAGS += -lvorbisfile -lvorbis -logg
+      ifeq ($(MACPORTS), 1)
+        LDFLAGS += -lSDL2_mixer -lvorbisfile -lvorbis -logg
+      else # homebrew
+        CXXFLAGS += $(shell $(PKG_CONFIG) --cflags SDL2_mixer)
+        LDFLAGS += $(shell $(PKG_CONFIG) --libs SDL2_mixer)
+        LDFLAGS += -lvorbisfile -lvorbis -logg
+      endif
     endif
   else # not osx
     CXXFLAGS += $(shell $(PKG_CONFIG) --cflags SDL2_mixer)
     LDFLAGS += $(shell $(PKG_CONFIG) --libs SDL2_mixer)
-    LDFLAGS += -lvorbisfile -lvorbis -logg -lpthread
   endif
 
   ifdef MSYS2
     LDFLAGS += -lmad
   endif
-  
+
   CXXFLAGS += -DSDL_SOUND
 endif
 
@@ -373,10 +383,16 @@ ifdef TILES
   ifeq ($(TARGETSYSTEM),WINDOWS)
     ifndef DYNAMIC_LINKING
       # These differ depending on what SDL2 is configured to use.
-      ifdef MSYS2
-        LDFLAGS += -lfreetype -lpng -lz -ltiff -lbz2 -lharfbuzz -lglib-2.0 -llzma -lws2_32 -lintl -liconv -lwebp -ljpeg -luuid
+      ifneq (,$(findstring mingw32,$(CROSS)))
+        # We use pkg-config to find out which libs are needed with MXE
+        LDFLAGS += $(shell $(PKG_CONFIG) SDL2_image --libs)
+        LDFLAGS += $(shell $(PKG_CONFIG) SDL2_ttf --libs)
       else
-        LDFLAGS += -lfreetype -lpng -lz -ljpeg -lbz2
+        ifdef MSYS2
+          LDFLAGS += -lfreetype -lpng -lz -ltiff -lbz2 -lharfbuzz -lglib-2.0 -llzma -lws2_32 -lintl -liconv -lwebp -ljpeg -luuid
+        else
+          LDFLAGS += -lfreetype -lpng -lz -ljpeg -lbz2
+        endif
       endif
     else
       # Currently none needed by the game itself (only used by SDL2 layer).

@@ -309,7 +309,7 @@ Build a release SDL version using Clang, link to libraries in the OS X Framework
 
 Build a release curses version with gettext supplied by Macports:
 
-    make NATIVE=osx OSX_MIN=10.7 RELEASE=1 LOCALIZE=1 MACPORTS=1
+    make NATIVE=osx OSX_MIN=10.7 RELEASE=1 LOCALIZE=1 MACPORTS=1 CLANG=1
 
 ### Compiling localization files
 
@@ -472,6 +472,7 @@ update-core
 pacman -Su
 pacman -S mingw-w64-x86_64-gcc
 pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-SDL2_mixer mingw-w64-x86_64-SDL2_ttf
+pacman -S mingw-w64-x86_64-ncurses
 pacman -S mingw-w64-x86_64-pkg-config mingw-w64-x86_64-libwebp
 pacman -S git make
 pacman -S mingw-w64-x86_64-lua
