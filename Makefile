@@ -30,9 +30,9 @@
 # Disable gettext, on some platforms the dependencies are hard to wrangle.
 #  make LOCALIZE=0
 # Compile localization files for specified languages
-#  make LANGUAGES="<lang_id_1>[ lang_id_2][ ...]"
+#  make localization LANGUAGES="<lang_id_1>[ lang_id_2][ ...]"
 #  (for example: make LANGUAGES="zh_CN zh_TW" for Chinese)
-#  make LANGUAGES=all
+#  make localization LANGUAGES=all
 #  (for every .po file in lang/po)
 # Change mapsize (reality bubble size)
 #  make MAPSIZE=<size>
@@ -160,6 +160,14 @@ ifdef CLANG
   else
     CXX = $(CROSS)clang++
     LD  = $(CROSS)clang++
+  endif
+endif
+
+ifndef RELEASE
+  ifeq ($(shell $(CXX) -E -Og - < /dev/null > /dev/null 2>&1 && echo fog),fog)
+    CXXFLAGS += -Og
+  else
+    CXXFLAGS += -O0
   endif
 endif
 
