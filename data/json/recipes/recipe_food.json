@@ -347,6 +347,8 @@
     [
       [ "plant_sac", 1 ],
       [ "seed_cotton_boll", 1 ],
+      [ "seed_pumpkin", 4 ],
+      [ "seed_sunflower", 2 ],
       [ "seed_canola", 4 ]
     ]
   ]
@@ -1194,6 +1196,8 @@
       [ "irradiated_broccoli", 2 ],
       [ "tomato", 2 ],
       [ "irradiated_tomato", 2 ],
+      [ "pumpkin", 2 ],
+      [ "irradiated_pumpkin", 2 ],
       [ "zucchini", 2 ],
       [ "irradiated_zucchini", 2 ],
       [ "celery", 2 ],
@@ -2033,6 +2037,34 @@
   ]
 },{
   "type" : "recipe",
+  "result": "cooked_pumpkin",
+  "category": "CC_FOOD",
+  "subcategory": "CSC_FOOD_VEGGI",
+  "skill_used": "cooking",
+  "difficulty": 1,
+  "time": 15000,
+  "reversible": false,
+  "autolearn": true,
+  "qualities" : [
+    {"id":"CUT","level":1,"amount":1},
+    {"id":"COOK","level":2,"amount":1}
+  ],
+  "tools": [
+    [
+      [ "hotplate", 5 ],
+      [ "char_smoker", 1 ],
+      [ "toolset", 5 ],
+      [ "fire", -1 ]
+    ]
+  ],
+  "components": [
+    [
+      [ "pumpkin", 1 ],
+      [ "irradiated_pumpkin", 1 ]
+    ]
+  ]
+},{
+  "type" : "recipe",
   "result": "potato_baked",
   "category": "CC_FOOD",
   "subcategory": "CSC_FOOD_VEGGI",
@@ -2087,6 +2119,34 @@
     [
       [ "salt", 1 ],
       [ "seasoning_salt", 10 ]
+    ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "fried_seeds",
+  "category": "CC_FOOD",
+  "subcategory": "CSC_FOOD_SNACK",
+  "skill_used": "cooking",
+  "difficulty": 1,
+  "time": 8000,
+  "reversible": false,
+  "autolearn": true,
+  "qualities" : [
+    {"id":"COOK","level":2,"amount":1}
+  ],
+  "tools": [
+    [
+      [ "hotplate", 5 ],
+      [ "char_smoker", 1 ],
+      [ "toolset", 5 ],
+      [ "fire", -1 ]
+    ]
+  ],
+  "components": [
+    [
+      [ "seed_weed", 4 ],
+      [ "seed_pumpkin", 4 ],
+      [ "seed_sunflower", 4 ]
     ]
   ]
 },{
@@ -3175,6 +3235,8 @@
         [ "can_tomato", 3 ],
         [ "tomato", 3 ],
         [ "irradiated_tomato", 3 ],
+        [ "pumpkin", 3 ],
+        [ "irradiated_pumpkin", 3 ],
         [ "broccoli", 3 ],
         [ "irradiated_broccoli", 3 ],
         [ "zucchini", 3 ],
@@ -3710,6 +3772,8 @@
       [ "irradiated_tomato", 2 ],
       [ "can_tomato", 2 ],
       [ "tomato", 2 ],
+      [ "pumpkin", 2 ],
+      [ "irradiated_pumpkin", 2 ],
       [ "irradiated_broccoli", 2 ],
       [ "broccoli", 2 ],
       [ "irradiated_zucchini", 2 ],
@@ -3821,6 +3885,8 @@
       [ "irradiated_onion", 1 ],
       [ "carrot", 6 ],
       [ "irradiated_carrot", 6 ],
+      [ "pumpkin", 1 ],
+      [ "irradiated_pumpkin", 1 ],
       [ "veggy_wild", 1 ],
       [ "veggy", 1 ],
       [ "dry_veggy", 1 ],
@@ -4032,11 +4098,24 @@
     ]
   ],
   "components": [
-    [ [ "flour", 3 ] ],
-    [ [ "water", 2 ], [ "water_clean", 2 ] ],
-    [ [ "chocolate", 1] ],
-    [ [ "powder_eggs", 1] ],
-    [ [ "weed", 5] ]
+    [
+      [ "flour", 3 ]
+    ],
+    [
+      [ "water", 2 ],
+      [ "water_clean", 2 ]
+    ],
+    [
+      [ "chocolate", 1 ]
+    ],
+    [
+      [ "powder_eggs", 10 ],
+      [ "egg_bird", 2 ],
+      [ "egg_reptile", 2 ]
+    ],
+    [
+      [ "weed", 5 ]
+    ]
   ]
 },{
   "type" : "recipe",
@@ -4408,6 +4487,8 @@
       [ "can_tomato", 1 ],
       ["tomato", 1],
       ["irradiated_tomato", 1],
+      ["pumpkin", 1 ],
+      ["irradiated_pumpkin", 1 ],
       ["broccoli", 1],
       ["irradiated_broccoli", 1],
       ["zucchini", 1],
@@ -4547,6 +4628,8 @@
       [ "can_tomato", 1 ],
       ["tomato", 1],
       ["irradiated_tomato", 1],
+      ["pumpkin", 1 ],
+      ["irradiated_pumpkin", 1 ],
       ["broccoli", 1],
       ["irradiated_broccoli", 1],
       ["zucchini", 1],
@@ -4700,6 +4783,8 @@
       [ "can_tomato", 1 ],
       ["tomato", 1],
       ["irradiated_tomato", 1],
+      ["pumpkin", 1],
+      ["irradiated_pumpkin", 1],
       ["broccoli", 1],
       ["irradiated_broccoli", 1],
       ["zucchini", 1],
@@ -5379,6 +5464,48 @@
   ]
 },{
   "type" : "recipe",
+  "result": "frenchtoast",
+  "category": "CC_FOOD",
+  "subcategory": "CSC_FOOD_BREAD",
+  "skill_used": "cooking",
+  "difficulty": 3,
+  "time": 12000,
+  "reversible": false,
+  "autolearn": true,
+  "qualities" : [
+     {"id":"COOK","level":2,"amount":1} ],
+  "tools": [
+    [
+      [ "hotplate", 8 ],
+      [ "char_smoker", 1 ],
+      [ "toolset", 8 ],
+      [ "fire", -1 ]
+    ]
+  ],
+  "components": [
+    [
+      [ "milk", 1 ],
+      [ "con_milk", 1 ],
+      [ "can_coconut", 1 ]
+    ],
+    [
+      [ "powder_eggs", 5 ],
+      [ "egg_bird", 1 ],
+      [ "egg_reptile", 1 ]
+    ],
+    [
+      [ "cinnamon", 20 ]
+    ],
+    [
+      [ "flatbread", 2 ],
+      [ "bread", 2 ],
+      [ "cornbread", 2 ],
+      [ "wastebread", 2 ],
+      [ "hardtack", 4]
+    ]
+  ]
+},{
+  "type" : "recipe",
   "result": "waffles",
   "category": "CC_FOOD",
   "subcategory": "CSC_FOOD_BREAD",
@@ -6026,6 +6153,8 @@
       [ "irradiated_broccoli", 2 ],
       [ "tomato", 2 ],
       [ "irradiated_tomato", 2 ],
+      [ "pumpkin", 2 ],
+      [ "irradiated_pumpkin", 2 ],
       [ "zucchini", 2 ],
       [ "irradiated_zucchini", 2 ],
       [ "celery", 2 ],
@@ -6348,6 +6477,8 @@
       [ "irradiated_celery", 2 ],
       [ "tomato", 2 ],
       [ "can_tomato", 2 ],
+      [ "pumpkin", 2 ],
+      [ "irradiated_pumpkin", 2 ],
       [ "onion", 2 ],
       [ "irradiated_onion", 2 ],
       [ "broccoli", 1 ],
@@ -7430,6 +7561,8 @@
       [ "irradiated_tomato", 2 ],
       [ "can_tomato", 2 ],
       [ "tomato", 2 ],
+      [ "pumpkin", 2 ],
+      [ "irradiated_pumpkin", 2 ],
       [ "irradiated_broccoli", 2 ],
       [ "broccoli", 2 ],
       [ "irradiated_zucchini", 2 ],
@@ -7493,6 +7626,8 @@
       [ "onion", 1 ],
       [ "irradiated_carrot", 6 ],
       [ "carrot", 6 ],
+      [ "pumpkin", 1 ],
+      [ "irradiated_pumpkin", 1 ],
       [ "veggy_wild", 1 ],
       [ "veggy", 1 ],
       [ "dry_veggy", 1 ],
@@ -7633,6 +7768,8 @@
       [ "irradiated_tomato", 1 ],
       [ "can_tomato", 1 ],
       [ "tomato", 1 ],
+      [ "pumpkin", 1 ],
+      [ "irradiated_pumpkin", 1 ],
       [ "irradiated_zucchini", 1 ],
       [ "zucchini", 1 ],
       [ "veggy", 1 ],
@@ -11159,24 +11296,6 @@
   "components": [
     [
       [ "garlic", 1 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "seed_canola",
-  "category": "CC_FOOD",
-  "subcategory": "CSC_FOOD_OTHER",
-  "skill_used": "survival",
-  "difficulty": 2,
-  "time": 5000,
-  "reversible": false,
-  "autolearn": true,
-  "qualities" : [
-    {"id":"CUT","level":1,"amount":1}
-  ],
-  "components": [
-    [
-      [ "canola", 1 ]
     ]
   ]
 },{
