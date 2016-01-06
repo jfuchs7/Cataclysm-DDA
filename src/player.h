@@ -96,6 +96,18 @@ struct stats : public JsonSerializer, public JsonDeserializer {
     }
 };
 
+struct encumbrance_data {
+    int iEnc = 0;
+    int iArmorEnc = 0;
+    int iBodyTempInt = 0;
+    double iLayers = 0.0;
+    bool operator ==( const encumbrance_data &RHS )
+    {
+        return this->iEnc == RHS.iEnc && this->iArmorEnc == RHS.iArmorEnc &&
+            this->iBodyTempInt == RHS.iBodyTempInt && this->iLayers == RHS.iLayers;
+    }
+};
+
 class player : public Character, public JsonSerializer, public JsonDeserializer
 {
     public:
@@ -478,7 +490,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool armor_absorb(damage_unit &du, item &armor);
         /** Runs through all bionics and armor on a part and reduces damage through their armor_absorb */
         void absorb_hit(body_part bp, damage_instance &dam) override;
-        /** Handles dodged attacks (training dodge) and ma_ondodge */
+        /** Called after the player has successfully dodged an attack */
         void on_dodge( Creature *source, int difficulty = INT_MIN ) override;
         /** Handles special defenses from an attack that hit us (source can be null) */
         void on_hit( Creature *source, body_part bp_hit = num_bp,
@@ -1188,8 +1200,10 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          */
         void on_mission_finished( mission &mission );
 
+        // returns a struct describing the encumbrance of a body part
+        encumbrance_data get_encumbrance( size_t i ) const;
         // formats and prints encumbrance info to specified window
-        void print_encumbrance(WINDOW *win, int min, int max, int line = -1) const;
+        void print_encumbrance( WINDOW * win, int line = -1 ) const;
 
         // Prints message(s) about current health
         void print_health() const;

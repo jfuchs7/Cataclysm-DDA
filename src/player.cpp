@@ -465,7 +465,7 @@ void player::process_turn()
     }
 
     remove_items_with( [this]( item &itm ) {
-        return itm.process_artifact( this, pos3() );
+        return itm.process_artifact( this, pos() );
     } );
 
     suffer();
@@ -2635,10 +2635,10 @@ Strength - 4;    Dexterity - 4;    Intelligence - 4;    Perception - 4"));
     wrefresh(w_stats);
 
     // Next, draw encumberment.
-    const char *title_ENCUMB = _("ENCUMBRANCE AND WARMTH");
-    mvwprintz(w_encumb, 0, 13 - utf8_width(title_ENCUMB) / 2, c_ltgray, title_ENCUMB);
-    print_encumbrance(w_encumb, 0, 8);
-    wrefresh(w_encumb);
+    const char *title_ENCUMB = _( "ENCUMBRANCE AND WARMTH" );
+    mvwprintz( w_encumb, 0, 13 - utf8_width( title_ENCUMB ) / 2, c_ltgray, title_ENCUMB );
+    print_encumbrance( w_encumb );
+    wrefresh( w_encumb );
 
     // Next, draw traits.
     const char *title_TRAITS = _("TRAITS");
@@ -2861,10 +2861,10 @@ Strength - 4;    Dexterity - 4;    Intelligence - 4;    Perception - 4"));
     refresh();
 
     int curtab = 1;
-    unsigned min, max;
+    size_t min, max;
     line = 0;
     bool done = false;
-    unsigned half_y = 0;
+    size_t half_y = 0;
 
     // Initial printing is DONE.  Now we give the player a chance to scroll around
     // and "hover" over different items for more info.
@@ -2971,25 +2971,10 @@ Strength - 4;    Dexterity - 4;    Intelligence - 4;    Perception - 4"));
             break;
         case 2: // Encumberment tab
         {
-            werase(w_encumb);
-            mvwprintz(w_encumb, 0, 0, h_ltgray, header_spaces.c_str());
-            mvwprintz(w_encumb, 0, 13 - utf8_width(title_ENCUMB)/2, h_ltgray, title_ENCUMB);
-            int encumb_win_size_y = 8;
-            half_y = encumb_win_size_y / 2;
-            if (line <= half_y) {
-                min = 0;
-                max = encumb_win_size_y;
-            } else if (line >= 12 - half_y) {
-                min = (12 - encumb_win_size_y);
-                max = 12;
-            } else {
-                min = line - half_y;
-                max = line - half_y + encumb_win_size_y;
-            }
-
-            print_encumbrance(w_encumb, min, max, line);
-            draw_scrollbar(w_encumb, line, encumb_win_size_y, 12, 1);
-            wrefresh(w_encumb);
+            werase( w_encumb );
+            mvwprintz( w_encumb, 0, 13 - utf8_width( title_ENCUMB ) / 2, h_ltgray, title_ENCUMB );
+            print_encumbrance( w_encumb, line );
+            wrefresh( w_encumb );
 
             werase(w_info);
             std::string s;
@@ -3036,23 +3021,32 @@ Strength - 4;    Dexterity - 4;    Intelligence - 4;    Perception - 4"));
             fold_and_print( w_info, 0, 1, FULL_SCREEN_WIDTH - 2, c_magenta, s );
             wrefresh(w_info);
 
-
             action = ctxt.handle_input();
-            if (action == "DOWN") {
-                if (line < 11) {
-                    line++;
+            if( action == "DOWN" ) {
+                if( line < num_bp - 1 ) {
+                    if( bp_aiOther[line] == line + 1 && // first of a pair
+                    get_encumbrance( line ) == get_encumbrance( bp_aiOther[line] ) ) {
+                        line += ( line < num_bp - 2 ) ? 2 : 0; // skip a line if we aren't at the last pair
+                    } else {
+                        line++; // unpaired or unequal
+                    }
                 }
-            } else if (action == "UP") {
-                if (line > 0) {
-                    line--;
+            } else if( action == "UP" ) {
+                if( line > 0 ) {
+                    if( bp_aiOther[line] == line - 1 && // second of a pair
+                         get_encumbrance( line ) == get_encumbrance( bp_aiOther[line] ) ) {
+                        line -= ( line < num_bp - 2 ) ? 2 : 0; // skip a line if we aren't at the first pair
+                    } else {
+                        line--; // unpaired or unequal
+                    }
                 }
-            } else if (action == "NEXT_TAB") {
+            } else if( action == "NEXT_TAB" ) {
                 mvwprintz(w_encumb, 0, 0, c_ltgray, header_spaces.c_str());
                 mvwprintz(w_encumb, 0, 13 - utf8_width(title_ENCUMB)/2, c_ltgray, title_ENCUMB);
                 wrefresh(w_encumb);
                 line = 0;
                 curtab++;
-            } else if (action == "QUIT") {
+            } else if(action == "QUIT") {
                 done = true;
             }
             break;
@@ -4664,6 +4658,11 @@ bool player::is_dead_state() const
 
 void player::on_dodge( Creature *source, int difficulty )
 {
+    // dodging throws of our aim unless we are either skilled at dodging or using a small weapon
+    if( is_armed() && weapon.is_gun() ) {
+        recoil += std::max( weapon.volume() - get_skill_level( skill_dodge ), 0 ) * rng( 0, 100 );
+    }
+
     if( difficulty == INT_MIN && source != nullptr ) {
         difficulty = source->get_melee();
     }
@@ -4676,19 +4675,11 @@ void player::on_dodge( Creature *source, int difficulty )
 }
 
 void player::on_hit( Creature *source, body_part bp_hit,
-                     int difficulty, dealt_projectile_attack const* const proj ) {
+                     int /*difficulty*/ , dealt_projectile_attack const* const proj ) {
     check_dead_state();
     bool u_see = g->u.sees( *this );
     if( source == nullptr || proj != nullptr ) {
         return;
-    }
-
-    if( difficulty == INT_MIN ) {
-        difficulty = source->get_melee();
-    }
-
-    if( difficulty > 0 ) {
-        practice( skill_dodge, difficulty );
     }
 
     if (has_active_bionic("bio_ods")) {
@@ -5307,7 +5298,7 @@ void player::knock_back_from( const tripoint &p )
         add_effect("stunned", 1);
         ///\EFFECT_STR_MAX allows knocked back player to knock back, damage, stun some monsters
         if ((str_max - 6) / 4 > critter->type->size) {
-            critter->knock_back_from(pos3()); // Chain reaction!
+            critter->knock_back_from(pos()); // Chain reaction!
             critter->apply_damage( this, bp_torso, (str_max - 6) / 4);
             critter->add_effect("stunned", 1);
         } else if ((str_max - 6) / 4 == critter->type->size) {
@@ -8297,8 +8288,8 @@ void player::suffer()
         rad_mut = 1;
     }
     if( rad_mut > 0 ) {
-        if( g->m.get_radiation( pos3() ) < rad_mut - 1 && one_in( 600 / rad_mut ) ) {
-            g->m.adjust_radiation( pos3(), 1 );
+        if( g->m.get_radiation( pos() ) < rad_mut - 1 && one_in( 600 / rad_mut ) ) {
+            g->m.adjust_radiation( pos(), 1 );
         } else if( one_in( 300 / rad_mut ) ) {
             radiation++;
         }
@@ -8321,7 +8312,7 @@ void player::suffer()
     int selfRadiation = 0;
     selfRadiation = leak_level("RADIOACTIVE");
 
-    int localRadiation = g->m.get_radiation( pos3() );
+    int localRadiation = g->m.get_radiation( pos() );
 
     if (localRadiation || selfRadiation) {
         bool has_helmet = false;
@@ -9054,21 +9045,21 @@ void player::rem_morale(morale_type type, const itype* item_type)
 
 void player::process_active_items()
 {
-    if( weapon.needs_processing() && weapon.process( this, pos3(), false ) ) {
+    if( weapon.needs_processing() && weapon.process( this, pos(), false ) ) {
         weapon = ret_null;
     }
 
     std::vector<item *> inv_active = inv.active_items();
     for( auto tmp_it : inv_active ) {
 
-        if( tmp_it->process( this, pos3(), false ) ) {
+        if( tmp_it->process( this, pos(), false ) ) {
             inv.remove_item(tmp_it);
         }
     }
 
     // worn items
     remove_worn_items_with( [this]( item &itm ) {
-        return itm.needs_processing() && itm.process( this, pos3(), false );
+        return itm.needs_processing() && itm.process( this, pos(), false );
     } );
 
     long ch_UPS = charges_of( "UPS" );
@@ -9263,7 +9254,7 @@ bool player::has_fire(const int quantity) const
 {
 // TODO: Replace this with a "tool produces fire" flag.
 
-    if( g->m.has_nearby_fire( pos3() ) ) {
+    if( g->m.has_nearby_fire( pos() ) ) {
         return true;
     } else if (has_charges("torch_lit", 1)) {
         return true;
@@ -9317,7 +9308,7 @@ void player::use_fire(const int quantity)
 // (home made, military), hotplate, welder in that order.
 // bio_lighter, bio_laser, bio_tools, has_active_bionic("bio_tools"
 
-    if( g->m.has_nearby_fire( pos3() ) ) {
+    if( g->m.has_nearby_fire( pos() ) ) {
         return;
     } else if (has_charges("torch_lit", 1)) {
         return;
@@ -9722,7 +9713,7 @@ bool player::consume_item( item &target )
             }
             if (comest->has_use()) {
                 //Check special use
-                amount_used = comest->invoke( this, to_eat, pos3() );
+                amount_used = comest->invoke( this, to_eat, pos() );
                 if( amount_used <= 0 ) {
                     return false;
                 }
@@ -10030,7 +10021,7 @@ bool player::eat(item *eaten, const it_comest *comest)
     }
 
     if (comest->has_use()) {
-        to_eat = comest->invoke( this, eaten, pos3() );
+        to_eat = comest->invoke( this, eaten, pos() );
         if( to_eat <= 0 ) {
             return false;
         }
@@ -10215,29 +10206,34 @@ bool player::eat(item *eaten, const it_comest *comest)
 
 int player::nutrition_for(const it_comest *comest)
 {
-    /* thresholds:
-    **  100 : 1x
-    **  300 : 2x
-    ** 1400 : 4x
-    ** 2800 : 6x
-    ** 6000 : 10x
-    */
+    // First value is hunger, second is nutrition multiplier
+    using threshold_pair = std::pair<int, float>;
+    static const std::array<threshold_pair, 7> thresholds = {{
+        { INT_MIN, 1.0f },
+        { 100, 1.0f },
+        { 300, 2.0f },
+        { 1400, 4.0f },
+        { 2800, 6.0f },
+        { 6000, 10.0f },
+        { INT_MAX, 10.0f }
+    }};
 
-    float nutr;
-
-    if (get_hunger() < 100) {
-        nutr = comest->nutr;
-    } else if (get_hunger() <= 300) {
-        nutr = ((float)get_hunger()/300) * 2 * comest->nutr;
-    } else if (get_hunger() <= 1400) {
-        nutr = ((float)get_hunger()/1400) * 4 * comest->nutr;
-    } else if (get_hunger() <= 2800) {
-        nutr = ((float)get_hunger()/2800) * 6 * comest->nutr;
-    } else {
-        nutr = ((float)get_hunger()/6000)* 10 * comest->nutr;
+    const int hng = get_hunger();
+    // Find the first threshold > hunger
+    int i = 1;
+    while( thresholds[i].first <= hng ) {
+        i++;
     }
 
-    return (int)nutr;
+    // How far are we along the way from last threshold to current one
+    const float t = (hng - thresholds[i - 1].first) /
+            (thresholds[i].first - thresholds[i - 1].first);
+
+    // Linear interpolation of values at relevant thresholds
+    const float modifier = (t * thresholds[i].second) +
+        ((1 - t) * thresholds[i - 1].second);
+
+    return (int)(comest->nutr * modifier);
 }
 
 void player::consume_effects(item *eaten, const it_comest *comest, bool rotten)
@@ -12157,7 +12153,7 @@ void player::do_read( item *book )
     }
 
     for( auto &m : reading->use_methods ) {
-        m.call( this, book, false, pos3() );
+        m.call( this, book, false, pos() );
     }
 
     activity.type = ACT_NULL;
@@ -12429,7 +12425,7 @@ bool player::can_sleep()
         // Sleep ain't happening until that meth wears off completely.
         return false;
     }
-    int sleepy = sleep_spot( pos3() );
+    int sleepy = sleep_spot( pos() );
     sleepy += rng( -8, 8 );
     if( sleepy > 0 ) {
         return true;
@@ -13942,7 +13938,7 @@ action_id player::get_next_auto_move_direction()
     }
 
     if (next_expected_position != tripoint_min ) {
-        if( pos3() != next_expected_position ) {
+        if( pos() != next_expected_position ) {
             // We're off course, possibly stumbling or stuck, cancel auto move
             return ACTION_NULL;
         }
@@ -13951,7 +13947,7 @@ action_id player::get_next_auto_move_direction()
     next_expected_position = auto_move_route.front();
     auto_move_route.erase(auto_move_route.begin());
 
-    tripoint dp = next_expected_position - pos3();
+    tripoint dp = next_expected_position - pos();
 
     // Make sure the direction is just one step and that
     // all diagonal moves have 0 z component
@@ -14085,7 +14081,7 @@ Creature::Attitude player::attitude_to( const Creature &other ) const
 bool player::sees( const tripoint &t, bool ) const
 {
     static const std::string str_bio_night("bio_night");
-    const int wanted_range = rl_dist( pos3(), t );
+    const int wanted_range = rl_dist( pos(), t );
     bool can_see = is_player() ? g->m.pl_sees( t, wanted_range ) :
         Creature::sees( t );;
     // Only check if we need to override if we already came to the opposite conclusion.
@@ -14107,7 +14103,7 @@ bool player::sees( const tripoint &t, bool ) const
 bool player::sees( const Creature &critter ) const
 {
     // This handles only the player/npc specific stuff (monsters don't have traits or bionics).
-    const int dist = rl_dist( pos3(), critter.pos3() );
+    const int dist = rl_dist( pos(), critter.pos() );
     if (dist <= 3 && has_trait("ANTENNAE")) {
         return true;
     }
@@ -14226,13 +14222,13 @@ bool player::can_hear( const tripoint &source, const int volume ) const
     }
 
     // source is in-ear and at our square, we can hear it
-    if ( source == pos3() && volume == 0 ) {
+    if ( source == pos() && volume == 0 ) {
         return true;
     }
 
     // TODO: sound attenuation due to weather
 
-    const int dist = rl_dist( source, pos3() );
+    const int dist = rl_dist( source, pos() );
     const float volume_multiplier = hearing_ability();
     return volume * volume_multiplier >= dist;
 }
@@ -14561,40 +14557,77 @@ std::vector<mission*> player::get_failed_missions() const
     return failed_missions;
 }
 
-void player::print_encumbrance(WINDOW *win, int min, int max, int line) const
+encumbrance_data player::get_encumbrance( size_t i ) const
 {
-    // initialize these once, and only once
-    static std::string asText[] = {_("Torso"), _("Head"), _("Eyes"), _("Mouth"), _("L. Arm"), _("R. Arm"),
-                             _("L. Hand"), _("R. Hand"), _("L. Leg"), _("R. Leg"), _("L. Foot"),
-                             _("R. Foot")};
-    static body_part aBodyPart[] = {bp_torso, bp_head, bp_eyes, bp_mouth, bp_arm_l, bp_arm_r, bp_hand_l,
-                             bp_hand_r, bp_leg_l, bp_leg_r, bp_foot_l, bp_foot_r};
-    int iEnc, iArmorEnc, iBodyTempInt;
-    double iLayers;
+    encumbrance_data enc_data;
+    enc_data.iBodyTempInt = ( temp_conv[i] / 100.0 ) * 2 - 100; // Scale of -100 to +100
+    enc_data.iEnc = encumb( bp_aBodyPart[i], enc_data.iLayers, enc_data.iArmorEnc );
+    return enc_data;
+}
+
+void player::print_encumbrance( WINDOW *win, int line ) const
+{
+    int height, width;
+    getmaxyx( win, height, width );
+    int orig_line = line;
+
+    // fill a set with the indices of the body parts to display
+    line = std::max( 0, line );
+    std::set<int> parts;
+    // check and optionally enqueue line+0, -1, +1, -2, +2, ...
+    int off = 0; // offset from line
+    int skip[2] = {}; // how far to skip on next neg/pos jump
+    do {
+        if( !skip[off > 0] && line + off >= 0 && line + off < num_bp ) { // line+off is in bounds
+            parts.insert( line + off );
+            if( line + off != ( int )bp_aiOther[line + off] &&
+                 get_encumbrance( line + off ) == get_encumbrance( bp_aiOther[line + off] ) ) { // part of a pair
+                skip[( int )bp_aiOther[line + off] > line + off ] = 1; // skip the next candidate in this direction
+            }
+        } else {
+            skip[off > 0] = 0;
+        }
+        if( off < 0 ) {
+            off = -off;
+        } else {
+            off = -off - 1;
+        }
+    } while( off > -num_bp && ( int )parts.size() < height - 1 );
+
     std::string out;
     /*** I chose to instead only display X+Y instead of X+Y=Z. More room was needed ***
      *** for displaying triple digit encumbrance, due to new encumbrance system.    ***
      *** If the player wants to see the total without having to do them maths, the  ***
      *** armor layers ui shows everything they want :-) -Davek                      ***/
-    for (int i = min; i < max; ++i) {
+    int row = 1;
+    for( auto bp : parts ) {
+        encumbrance_data e = get_encumbrance( bp );
+        bool combine = false;
+        if( e == get_encumbrance( bp_aiOther[bp] ) ) {
+            combine = true;
+        }
         out.clear();
-        iLayers = iArmorEnc = 0;
-        iBodyTempInt = (temp_conv[i] / 100.0) * 2 - 100; // Scale of -100 to +100
-        iEnc = encumb(aBodyPart[i], iLayers, iArmorEnc);
         // limb, and possible color highlighting
-        out = string_format("%-7s", asText[i].c_str());
-        mvwprintz(win, i + 1 - min, 1, (line == i) ? h_ltgray : c_ltgray, out.c_str());
+        out = string_format( "%-7s", ( combine ? bpp_asText[bp] : bp_asText[bp] ).c_str() );
+        mvwprintz( win, row, 1, ( orig_line == bp ) ? h_ltgray : c_ltgray, out.c_str() );
         // take into account the new encumbrance system for layers
-        out = string_format("(%1d) ", static_cast<int>(iLayers / 10.0));
-        wprintz(win, c_ltgray, out.c_str());
+        out = string_format( "(%1d) ", static_cast<int>( e.iLayers / 10.0 ) );
+        wprintz( win, c_ltgray, out.c_str() );
         // accumulated encumbrance from clothing, plus extra encumbrance from layering
-        wprintz(win, encumb_color(iEnc), string_format("%3d", iArmorEnc).c_str());
+        wprintz( win, encumb_color( e.iEnc ), string_format( "%3d", e.iArmorEnc ).c_str() );
         // seperator in low toned color
-        wprintz(win, c_ltgray, "+");
-        wprintz(win, encumb_color(iEnc), string_format("%-3d", iEnc - iArmorEnc).c_str());
+        wprintz( win, c_ltgray, "+" );
+        wprintz( win, encumb_color( e.iEnc ), string_format( "%-3d", e.iEnc - e.iArmorEnc ).c_str() );
         // print warmth, tethered to right hand side of the window
-        out = string_format("(% 3d)", iBodyTempInt);
-        mvwprintz(win, i + 1 - min, getmaxx(win) - 6, bodytemp_color(i), out.c_str());
+        out = string_format( "(% 3d)", e.iBodyTempInt );
+        mvwprintz( win, row, getmaxx( win ) - 6, bodytemp_color( bp ), out.c_str() );
+        row++;
     }
+
+    if( off > -num_bp ) { // not every body part fit in the window
+        //TODO: account for skipped paired body parts in scrollbar math
+        draw_scrollbar( win, std::max( orig_line, 0 ), height - 1, num_bp, 1 );
+    }
+
 }
 
