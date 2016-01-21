@@ -33,6 +33,8 @@ struct recipe;
 struct item_comp;
 struct tool_comp;
 class vehicle;
+class start_location;
+using start_location_id = string_id<start_location>;
 struct it_comest;
 struct w_point;
 
@@ -476,7 +478,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool handle_gun_damage( const itype &firing, const std::set<std::string> &curammo_effects );
         /** Handles gun firing effects and functions */
         void fire_gun( const tripoint &target, bool burst );
-        void fire_gun( const tripoint &target, long burst_size );
+        void fire_gun( const tripoint &target, bool burst, item& gun );
         /** Handles reach melee attacks */
         void reach_attack( const tripoint &target );
 
@@ -690,10 +692,18 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** Handles rooting effects */
         void rooted_message() const;
         void rooted();
-        /** Check if player capable of wielding item. If interactive is false dont display messages if item is not wieldable */
-        bool can_wield(const item& it, bool interactive = true) const;
-        /** Wields an item, returns false on failed wield */
-        virtual bool wield(item *it, bool autodrop = false);
+        /** Check player capable of wielding an item.
+          * @param alert display reason for any failure */
+        bool can_wield( const item& it, bool alert = true ) const;
+        /** Check player capable of unwielding an item.
+          * @param alert display reason for any failure */
+        bool can_unwield( const item& it, bool alert = true ) const;
+        /**
+         * Removes currently wielded item (if any) and replaces it with the target item
+         * @param target replacement item to wield or null item to remove existing weapon without replacing it
+         * @return whether both removal and replacement were successful (they are performed atomically)
+         */
+        virtual bool wield( item& target );
         /** Creates the UI and handles player input for picking martial arts styles */
         bool pick_style();
         /**
@@ -887,7 +897,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         const martialart &get_combat_style() const; // Returns the combat style object
         std::vector<item *> inv_dump(); // Inventory + weapon + worn (for death, etc)
         void place_corpse(); // put corpse+inventory on map at the place where this is.
-        int butcher_factor() const; // Automatically picks our best butchering tool
         item  *pick_usb(); // Pick a usb drive, interactively if it matters
 
         bool covered_with_flag( const std::string &flag, const std::bitset<num_bp> &parts ) const;
@@ -915,6 +924,9 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool has_item_with_flag( std::string flag ) const;
         // Has amount (or more) items with at least the required quality level.
         bool has_items_with_quality( const std::string &quality_id, int level, int amount ) const;
+        // Returns max required quality in player's items, INT_MIN if player has no such items
+        int max_quality( const std::string &quality_id ) const;
+
         bool has_item(int position);
         /**
          * Check whether a specific item is in the players possession.
@@ -1053,9 +1065,9 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         std::list<player_activity> backlog;
         int volume;
 
-        profession *prof;
+        const profession *prof;
 
-        std::string start_location;
+        start_location_id start_location;
 
         std::map<std::string, int> mutation_category_level;
 

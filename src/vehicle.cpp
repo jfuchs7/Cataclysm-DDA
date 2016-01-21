@@ -51,6 +51,9 @@ static const std::string part_location_structure("structure");
 
 const skill_id skill_mechanics( "mechanics" );
 
+const efftype_id effect_on_roof( "on_roof" );
+const efftype_id effect_stunned( "stunned" );
+
 const std::array<fuel_type, 7> &get_fuel_types()
 {
 
@@ -4708,7 +4711,7 @@ veh_collision vehicle::part_collision( int part, const tripoint &p,
 
             turns_stunned = ( rng( 0, dam ) > 10 ) + ( rng( 0, dam ) > 40 );
             if( turns_stunned > 0 ) {
-                critter->add_effect( "stunned", turns_stunned );
+                critter->add_effect( effect_stunned, turns_stunned );
             }
 
             const int angle = (100 - degree) * 2 * ( one_in( 2 ) ? 1 : -1 );
@@ -6355,7 +6358,7 @@ void vehicle::turret_ammo_data::consume( vehicle &veh, int const part, long cons
     }
 }
 
-bool vehicle::automatic_fire_turret( int p, const itype &gun, const itype &ammo, long &charges )
+bool vehicle::automatic_fire_turret( int p, const itype &guntype, const itype &ammotype, long &charges )
 {
     tripoint pos = global_pos3();
     pos.x += parts[p].precalc[0].x;
@@ -6364,9 +6367,9 @@ bool vehicle::automatic_fire_turret( int p, const itype &gun, const itype &ammo,
 
     npc tmp;
     tmp.set_fake( true );
-    tmp.add_effect( "on_roof", 1 );
+    tmp.add_effect( effect_on_roof, 1 );
     tmp.name = rmp_format(_("<veh_player>The %s"), part_info(p).name.c_str());
-    tmp.skillLevel(gun.gun->skill_used).level(8);
+    tmp.skillLevel( guntype.gun->skill_used ).level( 8 );
     tmp.skillLevel( skill_id( "gun" ) ).level(4);
     tmp.recoil = abs(velocity) / 100 / 4;
     tmp.setpos( pos );
@@ -6375,13 +6378,14 @@ bool vehicle::automatic_fire_turret( int p, const itype &gun, const itype &ammo,
     tmp.per_cur = 12;
     // Assume vehicle turrets are defending the player.
     tmp.attitude = NPCATT_DEFEND;
-    tmp.weapon = item(gun.id, 0);
-    tmp.weapon.set_curammo( ammo.id );
-    tmp.weapon.charges = charges;
-    tmp.weapon.update_charger_gun_ammo();
 
-    int area = std::max( aoe_size( tmp.weapon.get_curammo()->ammo->ammo_effects ),
-                         aoe_size( tmp.weapon.type->gun->ammo_effects ) );
+    item gun( guntype.id, calendar::turn );
+    gun.set_curammo( ammotype.id );
+    gun.charges = charges;
+    gun.update_charger_gun_ammo();
+
+    int area = std::max( aoe_size( gun.ammo_data()->ammo->ammo_effects ),
+                         aoe_size( gun.type->gun->ammo_effects ) );
     if( area > 0 ) {
         area += area == 1 ? 1 : 2; // Pad a bit for less friendly fire
     }
@@ -6422,7 +6426,7 @@ bool vehicle::automatic_fire_turret( int p, const itype &gun, const itype &ammo,
     }
 
     // Move the charger gun "whoosh" here - no need to pass it from above
-    if( tmp.weapon.is_charger_gun() && charges > 20 ) {
+    if( gun.is_charger_gun() && charges > 20 ) {
         sounds::sound( targ, 20, _("whoosh!") );
     }
     // notify player if player can see the shot
@@ -6434,10 +6438,12 @@ bool vehicle::automatic_fire_turret( int p, const itype &gun, const itype &ammo,
     // Drain a ton of power
     tmp_ups.charges = drain( fuel_type_battery, 1000 );
     tmp.worn.insert( tmp.worn.end(), tmp_ups );
-    tmp.fire_gun( targ, (long)abs( parts[p].mode ) );
+
+    tmp.fire_gun( targ, (long)abs( parts[p].mode ), gun );
+
     // Return whatever is left.
     refill( fuel_type_battery, tmp.worn.back().charges );
-    charges = tmp.weapon.charges; // Return real ammo, in case of burst ending early
+    charges = gun.charges; // Return real ammo, in case of burst ending early
 
     return true;
 }
@@ -6457,10 +6463,6 @@ bool vehicle::manual_fire_turret( int p, player &shooter, const itype &guntype,
     gun.set_curammo( ammotype.id );
     gun.charges = charges;
 
-    // Give shooter fake weapon
-    item old_weapon = shooter.weapon;
-    shooter.weapon = gun;
-
     // Spawn a fake UPS to power any turreted weapons that need electricity.
     item tmp_ups( "fake_UPS", 0 );
     // Drain a ton of power
@@ -6468,21 +6470,21 @@ bool vehicle::manual_fire_turret( int p, player &shooter, const itype &guntype,
     // Fire_gun expects that the fake UPS is a last worn item
     shooter.worn.insert( shooter.worn.end(), tmp_ups );
 
-    const int range = shooter.weapon.gun_range( &shooter );
+    const int range = gun.gun_range( &shooter );
     auto mons = shooter.get_visible_creatures( range );
     constexpr target_mode tmode = TARGET_MODE_TURRET_MANUAL; // No aiming yet!
     tripoint shooter_pos = shooter.pos();
-    auto trajectory = g->pl_target_ui( shooter_pos, range, &shooter.weapon, tmode );
+    auto trajectory = g->pl_target_ui( shooter_pos, range, &gun, tmode );
     shooter.recoil = abs(velocity) / 100 / 4;
     if( !trajectory.empty() ) {
         // Need to redraw before shooting
         g->draw_ter();
         const tripoint &targ = trajectory.back();
         // Put our shooter on the roof of the vehicle
-        shooter.add_effect( "on_roof", 1 );
-        shooter.fire_gun( targ, (long)abs( parts[p].mode ) );
+        shooter.add_effect( effect_on_roof, 1 );
+        shooter.fire_gun( targ, (long)abs( parts[p].mode ), gun );
         // And now back - we don't want to get any weird behavior
-        shooter.remove_effect( "on_roof" );
+        shooter.remove_effect( effect_on_roof );
     }
 
     // Done shooting, clean up
@@ -6501,12 +6503,10 @@ bool vehicle::manual_fire_turret( int p, player &shooter, const itype &guntype,
         }
     }
 
-    charges = shooter.weapon.charges;
+    charges = gun.charges;
 
     // Place the shooter back where we took them from
     shooter.setpos( oldpos );
-    // Give back old weapon
-    shooter.weapon = old_weapon;
 
     // Deactivate automatic aiming
     if( parts[p].mode > 0 ) {

@@ -29,6 +29,7 @@
 #include <string>
 #include <sstream>
 
+const efftype_id effect_contacts( "contacts" );
 
 static const std::string fake_recipe_book = "book";
 
@@ -675,7 +676,7 @@ void player::complete_craft()
     // farsightedness can impose a penalty on electronics and tailoring success
     // it's equivalent to a 2-rank electronics penalty, 1-rank tailoring
     if( has_trait("HYPEROPIC") && !is_wearing("glasses_reading") &&
-        !is_wearing("glasses_bifocal") && !has_effect("contacts") ) {
+        !is_wearing("glasses_bifocal") && !has_effect( effect_contacts) ) {
         int main_rank_penalty = 0;
         if (making->skill_used == skill_id("electronics")) {
             main_rank_penalty = 2;
@@ -1732,7 +1733,7 @@ void remove_ammo(item *dis_item, player &p)
     if( dis_item->has_flag( "NO_UNLOAD" ) ) {
         return;
     }
-    if( dis_item->is_gun() && dis_item->has_curammo() && dis_item->ammo_type() != "NULL" ) {
+    if( dis_item->is_gun() && dis_item->ammo_current() != "null" ) {
         item ammodrop( dis_item->ammo_current(), calendar::turn );
         ammodrop.charges = dis_item->charges;
         if( ammodrop.made_of( LIQUID ) && &p == &g->u ) {
@@ -1748,7 +1749,7 @@ void remove_ammo(item *dis_item, player &p)
         item ammodrop( default_ammo( dis_item->ammo_type() ), calendar::turn );
         ammodrop.charges = dis_item->charges;
         if( dis_item->ammo_type() == "plutonium" ) {
-            ammodrop.charges /= 500;
+            ammodrop.charges /= PLUTONIUM_CHARGES;
         }
         if( ammodrop.made_of( LIQUID ) && &p == &g->u ) {
             while( !g->handle_liquid( ammodrop, false, false ) ) {

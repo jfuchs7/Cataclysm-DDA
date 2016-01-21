@@ -25,6 +25,14 @@ const skill_id skill_firstaid( "firstaid" );
 const skill_id skill_gun( "gun" );
 const skill_id skill_throw( "throw" );
 
+const efftype_id effect_bouldering( "bouldering" );
+const efftype_id effect_catch_up( "catch_up" );
+const efftype_id effect_hit_by_player( "hit_by_player" );
+const efftype_id effect_infection( "infection" );
+const efftype_id effect_lying_down( "lying_down" );
+const efftype_id effect_npc_said( "npc_said" );
+const efftype_id effect_stunned( "stunned" );
+
 // A list of items used for escape, in order from least to most valuable
 #ifndef NUM_ESCAPE_ITEMS
 #define NUM_ESCAPE_ITEMS 11
@@ -176,7 +184,7 @@ void npc::move()
 
         if (action == npc_undecided) {
             if (mission == NPC_MISSION_SHELTER || mission == NPC_MISSION_BASE || mission == NPC_MISSION_SHOPKEEP
-                || mission == NPC_MISSION_GUARD || has_effect("infection")) {
+                || mission == NPC_MISSION_GUARD || has_effect( effect_infection)) {
                 action = npc_pause;
             } else if (has_new_items) {
                 action = scan_new_items(target);
@@ -303,8 +311,8 @@ void npc::execute_action(npc_action action, int target)
         // TODO: Handle empty path better
         if( best_spot == pos() || path.empty() ) {
             move_pause();
-            if( !has_effect( "lying_down" ) ) {
-                add_effect( "lying_down", 300, num_bp, false, 1 );
+            if( !has_effect( effect_lying_down ) ) {
+                add_effect( effect_lying_down, 300, num_bp, false, 1 );
                 if( g->u.sees( *this ) ) {
                     add_msg( _("%s lies down to sleep."), name.c_str() );
                 }
@@ -333,7 +341,7 @@ void npc::execute_action(npc_action action, int target)
             debugmsg("NPC tried to wield a loaded gun, but has none!");
             move_pause();
         } else {
-            wield(it);
+            wield( *it );
         }
     }
     break;
@@ -355,7 +363,7 @@ void npc::execute_action(npc_action action, int target)
             debugmsg("NPC tried to wield a gun, but has none!");
             move_pause();
         } else {
-            wield(&(slice[index]->front()));
+            wield( slice[index]->front() );
         }
     }
     break;
@@ -476,7 +484,7 @@ void npc::execute_action(npc_action action, int target)
             }
 
             int priority = 0;
-            if( veh->parts[p2].mount == last_dest ) {   
+            if( veh->parts[p2].mount == last_dest ) {
                 // Shares mount point with last known path
                 // We probably wanted to go there in the last turn
                 priority = 4;
@@ -620,7 +628,7 @@ void npc::choose_monster_target(int &enemy, int &danger,
                 okay_by_rules = (mon->get_hp() <= average_damage_dealt());
                 break;
             case ENGAGE_HIT:
-                okay_by_rules = (mon->has_effect("hit_by_player"));
+                okay_by_rules = (mon->has_effect( effect_hit_by_player));
                 break;
             case ENGAGE_ALL:
                 okay_by_rules = true;
@@ -732,7 +740,7 @@ npc_action npc::method_of_attack(int target, int danger)
                 return npc_melee; // If out of range, move closer to the target
             } else if (dist <= confident_range() / 3 && weapon.charges >= weapon.type->gun->burst &&
                        weapon.type->gun->burst > 1 &&
-                       ((weapon.has_curammo() && target_HP >= weapon.get_curammo()->ammo->damage * 3) ||
+                       ((weapon.ammo_data() && target_HP >= weapon.ammo_data()->ammo->damage * 3) ||
                         emergency(danger * 2))) {
                 return npc_shoot_burst;
             } else {
@@ -823,10 +831,10 @@ npc_action npc::address_needs(int danger)
         } else if( g->u.in_sleep_state() ) {
             // TODO: "Guard me while I sleep" command
             return npc_sleep;
-        } else if( g->u.sees( *this ) && !has_effect( "npc_said" ) &&
+        } else if( g->u.sees( *this ) && !has_effect( effect_npc_said ) &&
                    one_in( 10000 / ( fatigue + 1 ) ) ) {
             say( "<yawn>" );
-            add_effect( "npc_said", 10 );
+            add_effect( effect_npc_said, 10 );
         }
     }
 
@@ -876,15 +884,15 @@ npc_action npc::address_player()
 
     if (attitude == NPCATT_LEAD) {
         if( rl_dist( pos(), g->u.pos() ) >= 12 || !sees( g->u ) ) {
-            if(has_effect("catch_up")) {
-                int intense = get_effect_int("catch_up");
+            if(has_effect( effect_catch_up)) {
+                int intense = get_effect_int( effect_catch_up );
                 if (intense < 10) {
                     say("<keep_up>");
-                    add_effect("catch_up", 5);
+                    add_effect( effect_catch_up, 5);
                     return npc_pause;
                 } else if (intense == 10) {
                     say("<im_leaving_you>");
-                    add_effect("catch_up", 5);
+                    add_effect( effect_catch_up, 5);
                     return npc_pause;
                 } else {
                     return npc_goto_destination;
@@ -990,62 +998,44 @@ void npc::use_escape_item(int position)
     move_pause();
 }
 
-// Index defaults to 0, i.e., wielded weapon
-int npc::confident_range(int position)
+
+int npc::confident_range( int position )
 {
-
-    if (position == -1 && (!weapon.is_gun() || weapon.charges <= 0)) {
-        return 1;
-    }
-
     double deviation = 0;
-    int max = 0;
-    if (position == -1) {
-        deviation = get_weapon_dispersion( &weapon, true );
-        deviation += recoil + driving_recoil;
-        // Convert from MoA back to quarter-degrees.
-        deviation /= 15;
-    } else { // We aren't firing a gun, we're throwing something!
 
-        item *thrown = &i_at(position);
-        max = throw_range(position); // The max distance we can throw
-        deviation = 0;
-        ///\EFFECT_THROW_NPC increases throwing confidence
-        if (skillLevel( skill_throw ) < 8) {
-            deviation += 8 - skillLevel( skill_throw );
-        } else {
-            deviation -= skillLevel( skill_throw ) - 6;
+    if( position == -1 ) {
+        // Firing a weapon
+        if( !weapon.is_gun() || weapon.ammo_remaining() <= 0 ) {
+            return 0;
         }
 
+        deviation = get_weapon_dispersion( &weapon, true ) + recoil + driving_recoil;
+        deviation /= 15; // convert from MoA back to quarter-degrees.
+
+        return std::min( int( 360 / deviation ), weapon.gun_range( this ) );
+
+    } else {
+        // Throwing an item
+        const auto& thrown = i_at( position );
+
+        ///\EFFECT_THROW_NPC increases throwing confidence of all items
+        deviation += 10 - skillLevel( skill_throw );
+
+        ///\EFFECT_PER_NPC increases throwing confidence of all items
+        deviation += 10 - per_cur;
+
+        ///\EFFECT_DEX_NPC increases throwing confidence of all items
         deviation += throw_dex_mod();
 
-        ///\EFFECT_PER_NPC increases throwing confidence
-        if (per_cur < 6) {
-            deviation += 8 - per_cur;
-        } else if (per_cur > 8) {
-            deviation -= per_cur - 8;
-        }
+        ///\EFFECT_STR_NPC increases throwing confidence of heavy items
+        deviation += std::min( ( thrown.weight() / 100 ) - str_cur, 0 );
 
-        deviation += encumb(bp_hand_r) + encumb(bp_hand_l) + encumb(bp_eyes) + 1;
-        if (thrown->volume() > 5) {
-            deviation += 1 + (thrown->volume() - 5) / 4;
-        }
-        if (thrown->volume() == 0) {
-            deviation += 3;
-        }
+        deviation += thrown.volume() / 4;
 
-        ///\EFFECT_STR_NPC decreases throwing confidence
-        deviation += 1 + abs(str_cur - (thrown->weight() / 113));
+        deviation += encumb( bp_hand_r ) + encumb( bp_hand_l ) + encumb( bp_eyes );
+
+        return std::min( int( 360 / deviation ), throw_range( position ) );
     }
-    //Account for rng's, *.5 for 50%
-    deviation /= 2;
-
-    // Using 180 for now for extra-confident NPCs.
-    int ret = (max > int(180 / deviation) ? max : int(180 / deviation));
-    if (weapon.has_curammo() && ret > weapon.gun_range(this)) {
-        return weapon.gun_range(this);
-    }
-    return ret;
 }
 
 // Index defaults to -1, i.e., wielded weapon
@@ -1201,9 +1191,9 @@ bool npc::can_move_to( const tripoint &p, bool no_bashing ) const
 void npc::move_to( const tripoint &pt, bool no_bashing )
 {
     if( g->m.has_flag("UNSTABLE", pt ) ) {
-        add_effect("bouldering", 1, num_bp, true);
-    } else if (has_effect("bouldering")) {
-        remove_effect("bouldering");
+        add_effect( effect_bouldering, 1, num_bp, true);
+    } else if (has_effect( effect_bouldering)) {
+        remove_effect( effect_bouldering);
     }
 
     tripoint p = pt;
@@ -1231,7 +1221,7 @@ void npc::move_to( const tripoint &pt, bool no_bashing )
         }
     }
 
-    if (has_effect("stunned")) {
+    if (has_effect( effect_stunned)) {
         p.x = rng(posx() - 1, posx() + 1);
         p.y = rng(posy() - 1, posy() + 1);
         p.z = posz();
@@ -1850,7 +1840,7 @@ void npc::wield_best_melee()
         it = &ret_null;
     }
 
-    wield( it );
+    wield( *it );
 }
 
 void npc::alt_attack(int target)
@@ -2203,7 +2193,7 @@ void npc::pick_and_eat()
             food = dynamic_cast<const it_comest *>(it.contents[0].type);
         }
         if (food != NULL) {
-            eaten_hunger = get_hunger() - food->nutr;
+            eaten_hunger = get_hunger() - food->get_nutrition();
             eaten_thirst = thirst - food->quench;
         }
         if (eaten_hunger > 0) { // <0 means we have a chance of puking
@@ -2484,7 +2474,7 @@ void npc::go_to_destination()
         move_pause();
         reach_destination();
         return;
-    } 
+    }
 
     // sx and sy are now equal to the direction we need to move in
     tripoint dest( posx() + 8 * sx, posy() + 8 * sy, posz() );

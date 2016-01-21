@@ -115,6 +115,38 @@ const skill_id skill_firstaid( "firstaid" );
 const species_id ZOMBIE( "ZOMBIE" );
 const species_id PLANT( "PLANT" );
 
+const efftype_id effect_adrenaline_mycus( "adrenaline_mycus" );
+const efftype_id effect_alarm_clock( "alarm_clock" );
+const efftype_id effect_amigara( "amigara" );
+const efftype_id effect_blind( "blind" );
+const efftype_id effect_boomered( "boomered" );
+const efftype_id effect_bouldering( "bouldering" );
+const efftype_id effect_contacts( "contacts" );
+const efftype_id effect_controlled( "controlled" );
+const efftype_id effect_deaf( "deaf" );
+const efftype_id effect_docile( "docile" );
+const efftype_id effect_downed( "downed" );
+const efftype_id effect_drunk( "drunk" );
+const efftype_id effect_evil( "evil" );
+const efftype_id effect_flu( "flu" );
+const efftype_id effect_glowing( "glowing" );
+const efftype_id effect_has_bag( "has_bag" );
+const efftype_id effect_hit_by_player( "hit_by_player" );
+const efftype_id effect_hot( "hot" );
+const efftype_id effect_infected( "infected" );
+const efftype_id effect_laserlocked( "laserlocked" );
+const efftype_id effect_onfire( "onfire" );
+const efftype_id effect_pacified( "pacified" );
+const efftype_id effect_pet( "pet" );
+const efftype_id effect_relax_gas( "relax_gas" );
+const efftype_id effect_sleep( "sleep" );
+const efftype_id effect_stunned( "stunned" );
+const efftype_id effect_teleglow( "teleglow" );
+const efftype_id effect_tetanus( "tetanus" );
+const efftype_id effect_tied( "tied" );
+const efftype_id effect_visuals( "visuals" );
+const efftype_id effect_winded( "winded" );
+
 void advanced_inv(); // player_activity.cpp
 void intro();
 nc_color sev(int a); // Right now, ONLY used for scent debugging....
@@ -156,12 +188,12 @@ game::game() :
     w_status2(NULL),
     w_blackspace(NULL),
     dangerous_proximity(5),
+    pixel_minimap_option(0),
     safe_mode(SAFE_MODE_ON),
     mostseen(0),
     gamemode(NULL),
     lookHeight(13),
-    tileset_zoom(16),
-    pixel_minimap_option(0)
+    tileset_zoom(16)
 {
     world_generator = new worldfactory();
     // do nothing, everything that was in here is moved to init_data() which is called immediately after g = new game; in main.cpp
@@ -274,11 +306,10 @@ game::~game()
     delete gamemode;
     delwin(w_terrain);
     delwin(w_minimap);
-    if (pixel_minimap_option){
-        delwin(w_pixel_minimap);
-    }
+    delwin(w_pixel_minimap);
     delwin(w_HP);
-    delwin(w_messages);
+    delwin(w_messages_short);
+    delwin(w_messages_long);
     delwin(w_location);
     delwin(w_status);
     delwin(w_status2);
@@ -321,6 +352,12 @@ void game::init_ui()
         intro();
 
         first_init = false;
+
+#ifdef TILES
+        //class variable to track the option being active
+        //only set once, toggle action is used to change during game
+        pixel_minimap_option = OPTIONS["PIXEL_MINIMAP"];
+#endif // TILES
     }
 
     int sidebarWidth = narrow_sidebar ? 45 : 55;
@@ -417,19 +454,16 @@ void game::init_ui()
 
     int minimapX, minimapY; // always MINIMAP_WIDTH x MINIMAP_HEIGHT in size
     int hpX, hpY, hpW, hpH;
-    int messX, messY, messW, messH;
+    int messX, messY, messW, messHshort, messHlong;
     int locX, locY, locW, locH;
     int statX, statY, statW, statH;
     int stat2X, stat2Y, stat2W, stat2H;
     int mouseview_y, mouseview_h, mouseview_w;
     int pixelminimapW, pixelminimapH, pixelminimapX, pixelminimapY;
 
-    //class variable to track the option being active
-    pixel_minimap_option = 0;
     bool pixel_minimap_custom_height = false;
 
 #ifdef TILES
-    pixel_minimap_option = OPTIONS["PIXEL_MINIMAP"];
     pixel_minimap_custom_height = OPTIONS["PIXEL_MINIMAP_HEIGHT"] > 0;
 #endif // TILES
 
@@ -443,17 +477,18 @@ void game::init_ui()
         locW = sidebarWidth;
         stat2H = 2;
         stat2W = sidebarWidth;
-        pixelminimapW = sidebarWidth * pixel_minimap_option;
-        pixelminimapH = (pixelminimapW / 2) * pixel_minimap_option;
+        pixelminimapW = sidebarWidth;
+        pixelminimapH = (pixelminimapW / 2);
         if (pixel_minimap_custom_height && pixelminimapH > OPTIONS["PIXEL_MINIMAP_HEIGHT"]){
             pixelminimapH = OPTIONS["PIXEL_MINIMAP_HEIGHT"];
         }
-        messH = TERRAIN_WINDOW_TERM_HEIGHT - (statH + locH + stat2H + pixelminimapH);
+        messHshort = TERRAIN_WINDOW_TERM_HEIGHT - (statH + locH + stat2H + pixelminimapH);
         messW = sidebarWidth;
-        if (messH < 9) {
-            pixelminimapH -= 9 - messH;
-            messH = 9;
+        if (messHshort < 9) {
+            pixelminimapH -= 9 - messHshort;
+            messHshort = 9;
         }
+        messHlong = TERRAIN_WINDOW_TERM_HEIGHT - (statH + locH + stat2H);
 
         // Now position the elements relative to each other.
         minimapX = 0;
@@ -469,7 +504,7 @@ void game::init_ui()
         messX = 0;
         messY = stat2Y + stat2H;
         pixelminimapX = 0;
-        pixelminimapY = messY + messH;
+        pixelminimapY = messY + messHshort;
 
         mouseview_y = messY + 7;
         mouseview_h = TERRAIN_WINDOW_TERM_HEIGHT - mouseview_y - 5;
@@ -484,26 +519,27 @@ void game::init_ui()
         messX = MINIMAP_WIDTH;
         messY = 0;
         messW = sidebarWidth - messX;
-        pixelminimapW = messW * pixel_minimap_option;
-        pixelminimapH = (pixelminimapW / 2) * pixel_minimap_option;
+        pixelminimapW = messW;
+        pixelminimapH = (pixelminimapW / 2);
         if (pixel_minimap_custom_height && pixelminimapH > OPTIONS["PIXEL_MINIMAP_HEIGHT"]){
             pixelminimapH = OPTIONS["PIXEL_MINIMAP_HEIGHT"];
         }
-        messH = TERRAIN_WINDOW_TERM_HEIGHT - (locH + statH + pixelminimapH); // 1 for w_location + 4 for w_stat, w_messages starts at 0
-        if (messH < 9) {
-            pixelminimapH -= 9 - messH;
-            messH = 9;
+        messHshort = TERRAIN_WINDOW_TERM_HEIGHT - (locH + statH + pixelminimapH); // 1 for w_location + 4 for w_stat, w_messages starts at 0
+        if (messHshort < 9) {
+            pixelminimapH -= 9 - messHshort;
+            messHshort = 9;
         }
+        messHlong = TERRAIN_WINDOW_TERM_HEIGHT - (locH + statH);
         pixelminimapX = MINIMAP_WIDTH;
-        pixelminimapY = messH;
+        pixelminimapY = messHshort;
         hpX = 0;
         hpY = MINIMAP_HEIGHT;
         // under the minimap, but down to the same line as w_location (which is under w_messages)
         // so it erases the space between w_terrain and (w_messages and w_location)
-        hpH = messH + pixelminimapH - MINIMAP_HEIGHT + 3;
+        hpH = messHshort + pixelminimapH - MINIMAP_HEIGHT + 3;
         hpW = 7;
         locX = MINIMAP_WIDTH;
-        locY = messY + messH + pixelminimapH;
+        locY = messY + messHshort + pixelminimapH;
         locW = sidebarWidth - locX;
         statY = locY + locH;
         statW = sidebarWidth;
@@ -528,12 +564,18 @@ void game::init_ui()
     w_HP = newwin(hpH, hpW, _y + hpY, _x + hpX);
     werase(w_HP);
 
-    w_messages = newwin(messH, messW, _y + messY, _x + messX);
-    werase(w_messages);
+    w_messages_short = newwin(messHshort, messW, _y + messY, _x + messX);
+    werase(w_messages_short);
 
-    if (pixel_minimap_option){
-        w_pixel_minimap = newwin(pixelminimapH, pixelminimapW, _y + pixelminimapY, _x + pixelminimapX);
-        werase(w_pixel_minimap);
+    w_messages_long = newwin(messHlong, messW, _y + messY, _x + messX);
+    werase(w_messages_long);
+
+    w_pixel_minimap = newwin(pixelminimapH, pixelminimapW, _y + pixelminimapY, _x + pixelminimapX);
+    werase(w_pixel_minimap);
+
+    w_messages = w_messages_short;
+    if (!pixel_minimap_option) {
+        w_messages = w_messages_long;
     }
 
     w_location = newwin(locH, locW, _y + locY, _x + locX);
@@ -577,6 +619,24 @@ void game::toggle_fullscreen(void)
     init_ui();
     refresh_all();
 #endif
+}
+
+void game::toggle_pixel_minimap(void)
+{
+#ifdef TILES
+    if (w_messages == w_messages_short) {
+        clear_window_area(w_pixel_minimap);
+        w_messages = w_messages_long;
+        pixel_minimap_option = 0;
+    } else {
+        w_messages = w_messages_short;
+        pixel_minimap_option = 1;
+    }
+    werase(w_messages);
+    mvwputch(w_messages, 0, 0, c_black, ' ');
+    wrefresh(w_messages);
+    draw_sidebar();
+#endif // TILES
 }
 
 // temporarily switch out of fullscreen for functions that rely
@@ -693,7 +753,7 @@ void game::start_game(std::string worldname)
     }
     u.setID( assign_npc_id() ); // should be as soon as possible, but *after* load_master
 
-    const start_location &start_loc = *start_location::find( u.start_location );
+    const start_location &start_loc = u.start_location.obj();
     const tripoint omtstart = start_loc.setup();
     if( scen->has_map_special() ) {
         // Specials can add monster spawn points and similar and should be done before the main
@@ -755,12 +815,12 @@ void game::start_game(std::string worldname)
         start_loc.burn( omtstart, 3, 3 );
     }
     if (scen->has_flag("INFECTED")){
-        u.add_effect("infected", 1, random_body_part(), true);
+        u.add_effect( effect_infected, 1, random_body_part(), true);
     }
     if (scen->has_flag("BAD_DAY")){
-        u.add_effect("flu", 10000);
+        u.add_effect( effect_flu, 10000);
         ///\EFFECT_STR_MAX decreases drunkenness at start of BAD_DAY scenarios
-        u.add_effect("drunk", 2700 - (12 * u.str_max));
+        u.add_effect( effect_drunk, 2700 - (12 * u.str_max));
         u.add_morale(MORALE_FEELING_BAD,-100,50,50,50);
     }
     if(scen->has_flag("HELI_CRASH")) {
@@ -1401,7 +1461,7 @@ bool game::do_turn()
         weather_data(weather).effect();
     }
 
-    if( u.has_effect("sleep") && calendar::once_every(MINUTES(30)) ) {
+    if( u.has_effect( effect_sleep) && calendar::once_every(MINUTES(30)) ) {
         draw();
         refresh();
     }
@@ -1981,6 +2041,7 @@ input_context get_default_mode_input_context()
     ctxt.register_action("zoom_in");
     ctxt.register_action("toggle_sidebar_style");
     ctxt.register_action("toggle_fullscreen");
+    ctxt.register_action("toggle_pixel_minimap");
     ctxt.register_action("action_menu");
     ctxt.register_action("item_action_menu");
     ctxt.register_action("ANY_INPUT");
@@ -2016,12 +2077,22 @@ input_context game::get_player_input(std::string &action)
 
         //x% of the Viewport, only shown on visible areas
         auto const weather_info = get_weather_animation(weather);
+        int offset_x = (u.posx() + u.view_offset.x) - getmaxx(w_terrain) / 2;
+        int offset_y = (u.posy() + u.view_offset.y) - getmaxy(w_terrain) / 2;
 
-        const int dropCount = int(iEndX * iEndY * weather_info.factor);
-        const int offset_x = (u.posx() + u.view_offset.x) - getmaxx(w_terrain) / 2;
-        const int offset_y = (u.posy() + u.view_offset.y) - getmaxy(w_terrain) / 2;
+#ifdef TILES
+        if( tile_iso && use_tiles ) {
+            iStartX = 0;
+            iStartY = 0;
+            iEndX = MAPSIZE * SEEX;
+            iEndY = MAPSIZE * SEEY;
+            offset_x = 0;
+            offset_y = 0;
+        }
+#endif //TILES
 
-        const bool bWeatherEffect = (weather_info.glyph != '?');
+        const bool bWeatherEffect = ( weather_info.glyph != '?' );
+        const int dropCount = int( iEndX * iEndY * weather_info.factor );
 
         weather_printable wPrint;
         wPrint.colGlyph = weather_info.color;
@@ -2041,7 +2112,7 @@ input_context game::get_player_input(std::string &action)
         inp_mngr.set_timeout(125);
         // Force at least one animation frame if the player is dead.
         while( handle_mouseview(ctxt, action) || uquit == QUIT_WATCH ) {
-            if (bWeatherEffect && OPTIONS["ANIMATION_RAIN"]) {
+            if( bWeatherEffect && OPTIONS["ANIMATION_RAIN"] ) {
                 /*
                 Location to add rain drop animation bits! Since it refreshes w_terrain it can be added to the animation section easily
                 Get tile information from above's weather information:
@@ -2050,25 +2121,31 @@ input_context game::get_player_input(std::string &action)
                 WEATHER_FLURRIES | WEATHER_SNOW | WEATHER_SNOWSTORM = "weather_snowflake"
                 */
 
-                //Erase previous drops from w_terrain
-                for( auto &elem : wPrint.vdrops ) {
-                    const tripoint location( elem.first + offset_x, elem.second + offset_y, get_levz() );
-                    const lit_level lighting = visibility_cache[location.x][location.y];
-                    wmove( w_terrain, location.y - offset_y, location.x - offset_x );
-                    if( !m.apply_vision_effects( w_terrain, lighting, cache ) ) {
-                        m.drawsq( w_terrain, u, location, false, true,
-                                  u.pos() + u.view_offset,
-                                  lighting == LL_LOW, lighting == LL_BRIGHT );
+#ifdef TILES
+                if( !use_tiles ) {
+#endif //TILES
+                    //If not using tiles, erase previous drops from w_terrain
+                    for( auto &elem : wPrint.vdrops ) {
+                        const tripoint location( elem.first + offset_x, elem.second + offset_y, get_levz() );
+                        const lit_level lighting = visibility_cache[location.x][location.y];
+                        wmove( w_terrain, location.y - offset_y, location.x - offset_x );
+                        if( !m.apply_vision_effects( w_terrain, lighting, cache ) ) {
+                            m.drawsq( w_terrain, u, location, false, true,
+                                      u.pos() + u.view_offset,
+                                      lighting == LL_LOW, lighting == LL_BRIGHT );
+                        }
                     }
+#ifdef TILES
                 }
-
+#endif //TILES
                 wPrint.vdrops.clear();
 
-                for (int i = 0; i < dropCount; i++) {
-                    const int iRandX = rng(iStartX, iEndX - 1);
-                    const int iRandY = rng(iStartY, iEndY - 1);
+                for( int i = 0; i < dropCount; i++ ) {
+                    const int iRandX = rng( iStartX, iEndX - 1 );
+                    const int iRandY = rng( iStartY, iEndY - 1 );
                     const int mapx = iRandX + offset_x;
                     const int mapy = iRandY + offset_y;
+
                     const tripoint mapp( mapx, mapy, u.posz() );
 
                     const lit_level lighting = visibility_cache[mapp.x][mapp.y];
@@ -2144,6 +2221,9 @@ input_context game::get_player_input(std::string &action)
                 break;
             }
             wrefresh(w_terrain);
+
+            //updating the pixel minimap here allows red flashing indicators for enemies to actually flicker
+            draw_pixel_minimap();
         }
         inp_mngr.set_timeout(-1);
     } else {
@@ -2904,7 +2984,7 @@ bool game::handle_action()
                     quicksave();
                     bSleep = true;
                 } else if (as_m.ret >= 3 && as_m.ret <= 9) {
-                    u.add_effect("alarm_clock", 600 * as_m.ret);
+                    u.add_effect( effect_alarm_clock, 600 * as_m.ret);
                     bSleep = true;
                 }
 
@@ -2937,8 +3017,8 @@ bool game::handle_action()
                     add_msg(m_info, _("Safe mode OFF!"));
                 }
             }
-            if( u.has_effect("laserlocked") ) {
-                u.remove_effect("laserlocked");
+            if( u.has_effect( effect_laserlocked) ) {
+                u.remove_effect( effect_laserlocked);
             }
             break;
 
@@ -2960,9 +3040,9 @@ bool game::handle_action()
                     critter.ignoring = rl_dist( u.pos(), critter.pos() );
                 }
                 safe_mode = SAFE_MODE_ON;
-            } else if( u.has_effect("laserlocked") ) {
+            } else if( u.has_effect( effect_laserlocked) ) {
                 add_msg(m_info, _("Ignoring laser targeting!"));
-                u.remove_effect("laserlocked");
+                u.remove_effect( effect_laserlocked);
             }
             break;
 
@@ -3046,6 +3126,10 @@ bool game::handle_action()
 
         case ACTION_TOGGLE_FULLSCREEN:
             toggle_fullscreen();
+            break;
+
+        case ACTION_TOGGLE_PIXEL_MINIMAP:
+            toggle_pixel_minimap();
             break;
 
         case ACTION_DISPLAY_SCENT:
@@ -4968,6 +5052,18 @@ void game::draw()
 #endif // TILES
 }
 
+void game::draw_pixel_minimap()
+{
+    // Force a refresh of the pixel minimap.
+    // only do so if it is in use
+    if(pixel_minimap_option && w_pixel_minimap){
+        werase(w_pixel_minimap);
+        //trick window into rendering
+        mvwputch(w_pixel_minimap, 0, 0, c_black, ' ');
+        wrefresh(w_pixel_minimap);
+    }
+}
+
 void game::draw_sidebar()
 {
     if (fullscreen) {
@@ -5103,13 +5199,9 @@ void game::draw_sidebar()
 
     draw_minimap();
 
-    // Force a refresh of the pixel minimap.
-    // only do so if it is in use
-    if(pixel_minimap_option && w_pixel_minimap){
-        werase(w_pixel_minimap);
-        wrefresh(w_pixel_minimap);
-    }
+    draw_pixel_minimap();
 }
+
 
 void game::draw_critter( const Creature &critter, const tripoint &center )
 {
@@ -5220,7 +5312,7 @@ void game::draw_ter( const tripoint &center, const bool looking, const bool draw
     }
     wrefresh(w_terrain);
 
-    if (u.has_effect("visuals") || (u.get_effect_int("hot", bp_head) > 1)) {
+    if( u.has_effect( effect_visuals ) || u.get_effect_int( effect_hot, bp_head ) > 1 ) {
         hallucinate( center );
     }
 }
@@ -5831,11 +5923,11 @@ int game::mon_info(WINDOW *w)
                 cancel_activity_query(_("%s spotted!"), critter.name().c_str());
                 if (u.has_trait("M_DEFENDER") && critter.type->in_species( PLANT )) {
                     add_msg(m_warning, _("We have detected a %s."), critter.name().c_str());
-                    if (!u.has_effect("adrenaline_mycus")){
-                        u.add_effect("adrenaline_mycus", 300);
-                    } else if (u.get_effect_int("adrenaline_mycus") == 1) {
+                    if (!u.has_effect( effect_adrenaline_mycus)){
+                        u.add_effect( effect_adrenaline_mycus, 300 );
+                    } else if( u.get_effect_int( effect_adrenaline_mycus ) == 1 ) {
                         // Triffids present.  We ain't got TIME to adrenaline comedown!
-                        u.add_effect("adrenaline_mycus", 150);
+                        u.add_effect( effect_adrenaline_mycus, 150);
                         u.mod_pain(3); // Does take it out of you, though
                         add_msg(m_info, _("Our fibers strain with renewed wrath!"));
                     }
@@ -6095,7 +6187,7 @@ void game::monmove()
         while (critter.moves > 0 && !critter.is_dead()) {
             critter.made_footstep = false;
             // Controlled critters don't make their own plans
-            if (!critter.has_effect("controlled")) {
+            if (!critter.has_effect( effect_controlled)) {
                 // Formulate a path to follow
                 critter.plan( monster_factions );
             }
@@ -6453,7 +6545,7 @@ void game::flashbang( const tripoint &p, bool player_immune)
     int dist = rl_dist( u.pos(), p );
     if (dist <= 8 && !player_immune) {
         if (!u.has_bionic("bio_ears") && !u.is_wearing("rm13_armor_on")) {
-            u.add_effect("deaf", 40 - dist * 4);
+            u.add_effect( effect_deaf, 40 - dist * 4);
         }
         if( m.sees( u.pos(), p, 8 ) ) {
             int flash_mod = 0;
@@ -6468,7 +6560,7 @@ void game::flashbang( const tripoint &p, bool player_immune)
             } else if( u.worn_with_flag( "BLIND" ) || u.is_wearing( "goggles_welding" ) ) {
                 flash_mod = 3; // Not really proper flash protection, but better than nothing
             }
-            u.add_env_effect("blind", bp_eyes, (12 - flash_mod - dist) / 2, 10 - dist);
+            u.add_env_effect( effect_blind, bp_eyes, (12 - flash_mod - dist) / 2, 10 - dist );
         }
     }
     for( size_t i = 0; i < num_zombies(); i++ ) {
@@ -6476,13 +6568,13 @@ void game::flashbang( const tripoint &p, bool player_immune)
         dist = rl_dist( critter.pos(), p );
         if( dist <= 8 ) {
             if( dist <= 4 ) {
-                critter.add_effect("stunned", 10 - dist);
+                critter.add_effect( effect_stunned, 10 - dist);
             }
             if( critter.has_flag(MF_SEES) && m.sees( critter.pos(), p, 8 ) ) {
-                critter.add_effect("blind", 18 - dist);
+                critter.add_effect( effect_blind, 18 - dist);
             }
             if( critter.has_flag(MF_HEARS) ) {
-                critter.add_effect("deaf", 60 - dist * 4);
+                critter.add_effect( effect_deaf, 60 - dist * 4);
             }
         }
     }
@@ -6555,7 +6647,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
     if (zid != -1) {
         monster *targ = &critter_tracker->find(zid);
         if (stun > 0) {
-            targ->add_effect("stunned", stun);
+            targ->add_effect( effect_stunned, stun);
             add_msg(_("%s was stunned!"), targ->name().c_str());
         }
         for (size_t i = 1; i < traj.size(); i++) {
@@ -6563,7 +6655,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 targ->setpos(traj[i - 1]);
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
-                    targ->add_effect("stunned", force_remaining);
+                    targ->add_effect( effect_stunned, force_remaining);
                     add_msg(_("%s was stunned!"), targ->name().c_str());
                     add_msg(_("%s slammed into an obstacle!"), targ->name().c_str());
                     targ->apply_damage( nullptr, bp_torso, dam_mult * force_remaining );
@@ -6576,7 +6668,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 targ->setpos(traj[i - 1]);
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
-                     targ->add_effect("stunned", force_remaining);
+                     targ->add_effect( effect_stunned, force_remaining);
                      add_msg(_("%s was stunned!"), targ->name().c_str());
                 }
                 traj.erase(traj.begin(), traj.begin() + i);
@@ -6615,7 +6707,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
     } else if( npc_at( tp ) != -1 ) {
         npc *targ = active_npc[npc_at( tp )];
         if (stun > 0) {
-            targ->add_effect("stunned", stun);
+            targ->add_effect( effect_stunned, stun);
             add_msg(_("%s was stunned!"), targ->name.c_str());
         }
         for (size_t i = 1; i < traj.size(); i++) {
@@ -6623,8 +6715,8 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 targ->setpos( traj[i - 1] );
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
-                    targ->add_effect("stunned", force_remaining);
-                    if (targ->has_effect("stunned"))
+                    targ->add_effect( effect_stunned, force_remaining);
+                    if (targ->has_effect( effect_stunned))
                         add_msg(_("%s was stunned!"), targ->name.c_str());
 
                     body_part bps[] = {
@@ -6650,7 +6742,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
                     add_msg(_("%s was stunned!"), targ->name.c_str());
-                    targ->add_effect("stunned", force_remaining);
+                    targ->add_effect( effect_stunned, force_remaining);
                 }
                 traj.erase(traj.begin(), traj.begin() + i);
                 if (mon_at(traj.front()) != -1) {
@@ -6679,7 +6771,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
         }
     } else if( u.pos() == tp ) {
         if (stun > 0) {
-            u.add_effect("stunned", stun);
+            u.add_effect( effect_stunned, stun);
             add_msg(m_bad, ngettext("You were stunned for %d turn!",
                                     "You were stunned for %d turns!",
                                     stun),
@@ -6690,7 +6782,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 u.setpos( traj[i - 1] );
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
-                    if (u.has_effect("stunned")) {
+                    if (u.has_effect( effect_stunned)) {
                         add_msg(m_bad, ngettext("You were stunned AGAIN for %d turn!",
                                                 "You were stunned AGAIN for %d turns!",
                                                 force_remaining),
@@ -6701,7 +6793,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                                                 force_remaining),
                                 force_remaining);
                     }
-                    u.add_effect("stunned", force_remaining);
+                    u.add_effect( effect_stunned, force_remaining);
                     body_part bps[] = {
                         bp_head,
                         bp_arm_l, bp_arm_r,
@@ -6722,7 +6814,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                 u.setpos( traj[i - 1] );
                 force_remaining = traj.size() - i;
                 if (stun != 0) {
-                    if (u.has_effect("stunned")) {
+                    if (u.has_effect( effect_stunned)) {
                         add_msg(m_bad, ngettext("You were stunned AGAIN for %d turn!",
                                                 "You were stunned AGAIN for %d turns!",
                                                 force_remaining),
@@ -6733,7 +6825,7 @@ void game::knockback( std::vector<tripoint> &traj, int force, int stun, int dam_
                                                 force_remaining),
                                 force_remaining);
                     }
-                    u.add_effect("stunned", force_remaining);
+                    u.add_effect( effect_stunned, force_remaining);
                 }
                 traj.erase(traj.begin(), traj.begin() + i);
                 if (mon_at(traj.front()) != -1) {
@@ -6766,7 +6858,7 @@ void game::use_computer( const tripoint &p )
     }
 
     if (u.has_trait("HYPEROPIC") && !u.is_wearing("glasses_reading")
-        && !u.is_wearing("glasses_bifocal") && !u.has_effect("contacts")) {
+        && !u.is_wearing("glasses_bifocal") && !u.has_effect( effect_contacts)) {
         add_msg(m_info, _("You'll need to put on reading glasses before you can see the screen."));
         return;
     }
@@ -6795,7 +6887,7 @@ void game::resonance_cascade( const tripoint &p )
         minglow = 0;
     }
     if (maxglow > 0) {
-        u.add_effect("teleglow", rng(minglow, maxglow) * 100);
+        u.add_effect( effect_teleglow, rng(minglow, maxglow) * 100);
     }
     int startx = (p.x < 8 ? 0 : p.x - 8), endx = (p.x + 8 >= SEEX * 3 ? SEEX * 3 - 1 : p.x + 8);
     int starty = (p.y < 8 ? 0 : p.y - 8), endy = (p.y + 8 >= SEEY * 3 ? SEEY * 3 - 1 : p.y + 8);
@@ -7221,8 +7313,8 @@ bool game::revive_corpse( const tripoint &p, const item &it )
     critter.no_extra_death_drops = true;
 
     if (it.get_var( "zlave" ) == "zlave"){
-        critter.add_effect("pacified", 1, num_bp, true);
-        critter.add_effect("pet", 1, num_bp, true);
+        critter.add_effect( effect_pacified, 1, num_bp, true);
+        critter.add_effect( effect_pet, 1, num_bp, true);
     }
 
     if (it.get_var("no_ammo") == "no_ammo") {
@@ -7926,14 +8018,14 @@ bool pet_menu(monster *z)
     amenu.addentry(push_zlave, true, 'p', _("Push %s"), pet_name.c_str());
     amenu.addentry( rename, true, 'e', _("Rename") );
 
-    if (z->has_effect("has_bag")) {
+    if (z->has_effect( effect_has_bag)) {
         amenu.addentry(give_items, true, 'g', _("Place items into bag"));
         amenu.addentry(drop_all, true, 'd', _("Drop all items"));
     } else {
         amenu.addentry(attach_bag, true, 'b', _("Attach bag"));
     }
 
-    if (z->has_effect("tied")) {
+    if (z->has_effect( effect_tied)) {
         amenu.addentry(rope, true, 'r', _("Untie"));
     } else {
         if (g->u.has_amount("rope_6", 1)) {
@@ -7962,9 +8054,9 @@ bool pet_menu(monster *z)
         ///\EFFECT_DEX increases chance to successfully swap positions with your pet
         if (!one_in((g->u.str_cur + g->u.dex_cur) / 6)) {
 
-            bool t = z->has_effect("tied");
+            bool t = z->has_effect( effect_tied);
             if (t) {
-                z->remove_effect("tied");
+                z->remove_effect( effect_tied);
             }
 
             tripoint zp = z->pos();
@@ -7972,7 +8064,7 @@ bool pet_menu(monster *z)
             g->u.setpos( zp );
 
             if (t) {
-                z->add_effect("tied", 1, num_bp, true);
+                z->add_effect( effect_tied, 1, num_bp, true);
             }
 
             add_msg(_("You swap positions with your %s."), pet_name.c_str());
@@ -8041,7 +8133,7 @@ bool pet_menu(monster *z)
 
         g->u.i_rem(pos);
 
-        z->add_effect("has_bag", 1, num_bp, true);
+        z->add_effect( effect_has_bag, 1, num_bp, true);
 
         g->u.moves -= 200;
 
@@ -8056,7 +8148,7 @@ bool pet_menu(monster *z)
 
         z->inv.clear();
 
-        z->remove_effect("has_bag");
+        z->remove_effect( effect_has_bag);
 
         add_msg(_("You dump the contents of the %s's bag on the ground."), pet_name.c_str());
 
@@ -8101,7 +8193,7 @@ bool pet_menu(monster *z)
 
         bool success = g->make_drop_activity( ACT_STASH, z->pos() );
         if( success ) {
-            z->add_effect("controlled", 5);
+            z->add_effect( effect_controlled, 5);
         }
         return success;
     }
@@ -8124,12 +8216,12 @@ bool pet_menu(monster *z)
     }
 
     if (rope == choice) {
-        if (z->has_effect("tied")) {
-            z->remove_effect("tied");
+        if (z->has_effect( effect_tied)) {
+            z->remove_effect( effect_tied);
             item rope_6("rope_6", 0);
             g->u.i_add(rope_6);
         } else {
-            z->add_effect("tied", 1, num_bp, true);
+            z->add_effect( effect_tied, 1, num_bp, true);
             g->u.use_amount( "rope_6", 1 );
         }
 
@@ -8294,7 +8386,7 @@ void game::examine( const tripoint &examp )
         Creature *c = critter_at(examp);
         monster *mon = dynamic_cast<monster *>(c);
 
-        if( mon != nullptr && mon->has_effect("pet") ) {
+        if( mon != nullptr && mon->has_effect( effect_pet) ) {
             if (pet_menu(mon)) {
                 return;
             }
@@ -8859,7 +8951,7 @@ void game::zones_manager()
                                          false,
                                          u.pos() + u.view_offset );
                             } else {
-                                if (u.has_effect("boomered")) {
+                                if (u.has_effect( effect_boomered)) {
                                     mvwputch(w_terrain, iY - offset_y, iX - offset_x, c_magenta, '#');
 
                                 } else {
@@ -8942,6 +9034,12 @@ tripoint game::look_around( WINDOW *w_info, const tripoint &start_point,
     }
 
     draw_ter( lp );
+
+    //change player location to peek location temporarily for minimap update
+    tripoint current_pos = u.pos();
+    u.setpos(lp);
+    draw_pixel_minimap();
+    u.setpos(current_pos);
 
     int soffset = (int)OPTIONS["MOVE_VIEW_OFFSET"];
     bool fast_scroll = false;
@@ -9026,7 +9124,7 @@ tripoint game::look_around( WINDOW *w_info, const tripoint &start_point,
                                              false,
                                              tripoint( lx, ly, u.posz() ) );
                                 } else {
-                                    if (u.has_effect("boomered")) {
+                                    if (u.has_effect( effect_boomered)) {
                                         mvwputch(w_terrain, iY - offset_y - ly + u.posy(), iX - offset_x - lx + u.posx(), c_magenta, '#');
 
                                     } else {
@@ -9219,7 +9317,7 @@ std::vector<map_item_stack> game::find_nearby_items(int iRadius)
     std::vector<map_item_stack> ret;
     std::vector<std::string> item_order;
 
-    if (u.has_effect("blind") || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold")) {
+    if (u.has_effect( effect_blind) || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold")) {
         return ret;
     }
 
@@ -10316,6 +10414,9 @@ bool game::handle_liquid(item &liquid, bool from_ground, bool infinite, item *so
                 if (!infinite) {
                     liquid.charges -= charges_consumed;
                 }
+                if ( charges_consumed > 0 ) {
+                    return liquid.charges <= 0;
+                }
             }
 
             // No container selected (escaped, ...), ask to pour
@@ -10496,8 +10597,7 @@ void game::drop(int pos)
 {
     if (pos == INT_MIN) {
         make_drop_activity( ACT_DROP, u.pos() );
-    } else if (pos == -1 && u.weapon.has_flag("NO_UNWIELD")) {
-        add_msg(m_info, _("You cannot drop your %s."), u.weapon.tname().c_str());
+    } else if( pos == -1 && !u.can_unwield( u.weapon ) ) {
         return;
     } else {
         std::vector<item> dropped;
@@ -10704,7 +10804,7 @@ void game::plthrow(int pos)
         return;
     }
 
-    if (u.has_effect("relax_gas")) {
+    if (u.has_effect( effect_relax_gas)) {
         if (one_in(5)) {
             add_msg(m_good, _("You concentrate mightily, and your body obeys!"));
         }
@@ -10794,7 +10894,7 @@ std::vector<tripoint> game::pl_target_ui( tripoint &p, int range, item *relevant
             if (id >= 0) {
                 last_target = id;
                 last_target_was_npc = false;
-                zombie(last_target).add_effect("hit_by_player", 100);
+                zombie(last_target).add_effect( effect_hit_by_player, 100);
             }
         }
     }
@@ -10803,7 +10903,7 @@ std::vector<tripoint> game::pl_target_ui( tripoint &p, int range, item *relevant
 
 void game::plfire( bool burst, const tripoint &default_target )
 {
-    if( u.has_effect("relax_gas") ) {
+    if( u.has_effect( effect_relax_gas) ) {
         if( one_in(5) ) {
             add_msg(m_good, _("Your eyes steel, and you raise your weapon!"));
         } else {
@@ -10844,7 +10944,7 @@ void game::plfire( bool burst, const tripoint &default_target )
             } else if( w.is_gun() && w.has_gunmod( "shoulder_strap" ) >= 0 ) {
                 // wield item currently worn using shoulder strap
                 options.push_back( w.display_name() );
-                actions.push_back( [&]{ u.wield( &w ); } );
+                actions.push_back( [&]{ u.wield( w ); } );
             }
         }
 
@@ -10853,24 +10953,26 @@ void game::plfire( bool burst, const tripoint &default_target )
         }
     }
 
-    if( !u.weapon.is_gun() && !u.weapon.has_flag( "REACH_ATTACK" ) ) {
-        return;
-    }
-    if( u.weapon.is_gunmod() ) {
+    if( u.weapon.is_auxiliary_gunmod() ) {
         add_msg( m_info, _( "The %s must be attached to a gun, it can not be fired separately." ), u.weapon.tname().c_str() );
         return;
     }
-    if( !u.can_use( u.weapon ) ) {
+
+    item& gun = u.weapon.active_gunmod() ? *u.weapon.active_gunmod() : u.weapon;
+
+    if( !gun.is_gun() && !gun.has_flag( "REACH_ATTACK" ) ) {
+        return;
+    }
+    if( !u.can_use( gun ) ) {
         return;
     }
 
     // Execute reach attack (instead of shooting) if our weapon can reach and
     // either we're not using a gun or using a gun set to use a non-gun gunmod
-    bool reach_attack = u.weapon.has_flag( "REACH_ATTACK" ) &&
-                        ( !u.weapon.is_gun() || u.weapon.get_gun_mode() == "MODE_REACH" );
+    bool reach_attack = gun.has_flag( "REACH_ATTACK" ) && ( !gun.is_gun() || gun.get_gun_mode() == "MODE_REACH" );
 
     vehicle *veh = m.veh_at(u.pos());
-    if( veh != nullptr && veh->player_in_control(u) && u.weapon.is_two_handed(u) ) {
+    if( veh != nullptr && veh->player_in_control( u ) && gun.is_two_handed( u ) ) {
         add_msg(m_info, _("You need a free arm to drive!"));
         return;
     }
@@ -10878,52 +10980,51 @@ void game::plfire( bool burst, const tripoint &default_target )
     if( !reach_attack ) {
         //below prevents fire burst key from fireing in burst mode in semiautos that have been modded
         //should be fine to place this here, plfire(true,*) only once in code
-        if (burst && !u.weapon.has_flag("MODE_BURST")) {
+        if( burst && !gun.has_flag( "MODE_BURST" ) ) {
             return;
         }
 
-        if( !u.weapon.active && !u.weapon.is_in_auxiliary_mode() ) {
-            if( u.weapon.activate_charger_gun( u ) ) {
+        if( !gun.active && !gun.is_in_auxiliary_mode() ) {
+            if( gun.activate_charger_gun( u ) ) {
                 return;
             }
         }
 
-        if( u.weapon.has_flag("NO_AMMO") ) {
-            u.weapon.charges = 1;
-            u.weapon.set_curammo( "generic_no_ammo" );
+        if( gun.has_flag("NO_AMMO") ) {
+            gun.charges = 1;
+            gun.set_curammo( "generic_no_ammo" );
         }
 
-        if( u.weapon.has_flag("RELOAD_AND_SHOOT") && u.weapon.ammo_remaining() == 0 ) {
-            if( !u.weapon.reload( u, u.weapon.pick_reload_ammo( u, true ) ) ) {
+        if( gun.has_flag("RELOAD_AND_SHOOT") && gun.ammo_remaining() == 0 ) {
+            if( !gun.reload( u, gun.pick_reload_ammo( u, true ) ) ) {
                 return;
             }
 
             // Burn 2x the strength required to fire in stamina.
-            u.mod_stat( "stamina", u.weapon.type->min_str * -2 );
+            u.mod_stat( "stamina", gun.type->min_str * -2 );
 
             // At low stamina levels, firing starts getting slow.
             int sta_percent = (100 * u.stamina) / u.get_stamina_max();
             u.moves -= (sta_percent < 25) ? ((25 - sta_percent) * 2) : 0;
 
-            u.moves -= u.weapon.reload_time(u);
+            u.moves -= gun.reload_time(u);
             refresh_all();
         }
 
-        if( u.weapon.num_charges() < u.weapon.ammo_required() && !u.weapon.has_flag("RELOAD_AND_SHOOT") ) {
-            if( u.weapon.num_charges() == 0 ) {
+        if( gun.ammo_remaining() < gun.ammo_required() && !gun.has_flag("RELOAD_AND_SHOOT") ) {
+            if( gun.ammo_remaining() == 0 ) {
                 add_msg(m_info, _("You need to reload!"));
             } else {
-                add_msg(m_info, _("Your %s needs %i charges to fire!"), u.weapon.tname().c_str(), u.weapon.ammo_required() );
+                add_msg(m_info, _("Your %s needs %i charges to fire!"), gun.tname().c_str(), gun.ammo_required() );
             }
             return;
         }
 
-        const auto gun = u.weapon.type->gun.get();
-
-        if( gun != nullptr && ( u.weapon.get_gun_ups_drain() > 0 ) ) {
-            const int ups_drain = u.weapon.get_gun_ups_drain();
-            const int adv_ups_drain = std::max( 1, ups_drain * 3 / 5 );
+        if( gun.get_gun_ups_drain() > 0 ) {
+            const int ups_drain       = gun.get_gun_ups_drain();
+            const int adv_ups_drain   = std::max( 1, ups_drain * 3 / 5 );
             const int bio_power_drain = std::max( 1, ups_drain / 5 );
+
             if( !( u.has_charges( "UPS_off", ups_drain ) ||
                    u.has_charges( "adv_UPS_off", adv_ups_drain ) ||
                    (u.has_bionic( "bio_ups" ) && u.power_level >= bio_power_drain ) ) ) {
@@ -10934,7 +11035,7 @@ void game::plfire( bool burst, const tripoint &default_target )
             }
         }
 
-        if (u.weapon.has_flag("MOUNTED_GUN")) {
+        if( gun.has_flag( "MOUNTED_GUN" ) ) {
             int vpart = -1;
             vehicle *veh = m.veh_at( u.pos(), vpart );
             if( !m.has_flag_ter_or_furn( "MOUNTABLE", u.pos() ) &&
@@ -10948,9 +11049,9 @@ void game::plfire( bool burst, const tripoint &default_target )
 
     int range;
     if( reach_attack ) {
-        range = u.weapon.has_flag( "REACH3" ) ? 3 : 2;
+        range = gun.has_flag( "REACH3" ) ? 3 : 2;
     } else {
-        range = u.weapon.gun_range( &u );
+        range = gun.gun_range( &u );
     }
 
     temp_exit_fullscreen();
@@ -10959,22 +11060,21 @@ void game::plfire( bool burst, const tripoint &default_target )
     tripoint p = u.pos();
 
     target_mode tmode = reach_attack ? TARGET_MODE_REACH : TARGET_MODE_FIRE;
-    std::vector<tripoint> trajectory = pl_target_ui( p, range, &u.weapon, tmode,
-                                                     default_target );
+    std::vector<tripoint> trajectory = pl_target_ui( p, range, &gun, tmode, default_target );
 
     if (trajectory.empty()) {
-        if( u.weapon.has_flag("RELOAD_AND_SHOOT") && u.activity.type != ACT_AIM ) {
+        if( gun.has_flag( "RELOAD_AND_SHOOT" ) && u.activity.type != ACT_AIM ) {
             // Supress unloading if we're mid-aim.
-            u.moves += u.weapon.reload_time(u);
-            unload(u.weapon);
-            u.moves += u.weapon.reload_time(u) / 2; // unloading time
+            u.moves += gun.reload_time( u );
+            unload( gun );
+            u.moves += gun.reload_time( u ) / 2; // unloading time
         }
         reenter_fullscreen();
         return;
     }
     draw_ter(); // Recenter our view
 
-    if (u.weapon.get_gun_mode() == "MODE_BURST") {
+    if( gun.get_gun_mode() == "MODE_BURST" ) {
         burst = true;
     }
 
@@ -11042,7 +11142,7 @@ void game::butcher()
         return;
     }
 
-    const int factor = u.butcher_factor();
+    const int factor = u.max_quality( "BUTCHER" );
     const item *first_item_without_tools = nullptr;
     // Indices of relevant items
     std::vector<int> corpses;
@@ -11120,7 +11220,7 @@ void game::butcher()
             const recipe *cur_recipe = get_disassemble_recipe( first_item_without_tools->type->id );
             // Just for the "You need x to disassemble y" messages
             u.can_disassemble( *first_item_without_tools, cur_recipe, crafting_inv, true );
-        } 
+        }
         return;
     }
 
@@ -11526,7 +11626,7 @@ void game::unload( item &it )
     long qty = target->ammo_remaining();
 
     if( target->ammo_type() == "plutonium" ) {
-        qty = target->ammo_remaining() / 500;
+        qty = target->ammo_remaining() / PLUTONIUM_CHARGES;
         if( qty > 0 ) {
             add_msg( _( "You recover %i unused plutonium." ), qty );
         } else {
@@ -11536,8 +11636,7 @@ void game::unload( item &it )
     }
 
     // Construct a new ammo item and try to drop it
-    item ammo( target->has_curammo() ? target->ammo_current() :
-               default_ammo( target->ammo_type() ), calendar::turn );
+    item ammo( target->ammo_current(), calendar::turn );
     ammo.charges = qty;
 
     if( !add_or_drop_with_msg( u, ammo ) ) {
@@ -11546,7 +11645,7 @@ void game::unload( item &it )
 
     // If we succeeded remove appropriate qty of ammo from the item
     if( target->ammo_type() == "plutonium" ) {
-        qty *= 500;
+        qty *= PLUTONIUM_CHARGES;
     }
 
     target->charges -= qty;
@@ -11586,14 +11685,8 @@ void game::wield( int pos )
         u.inv.assign_empty_invlet( it, true );
     }
 
-    bool success = false;
-    if( pos == -1 ) {
-        success = u.wield( NULL );
-    } else {
-        success = u.wield( &( u.i_at( pos ) ) );
-    }
-
-    if( success ) {
+    // If called for the current weapon then try unwielding it
+    if( u.wield( pos == -1 ? u.ret_null : it ) ) {
         u.recoil = MIN_RECOIL;
     }
 }
@@ -11752,7 +11845,7 @@ bool game::check_save_mode_allowed()
         msg_ignore[0] = tolower(msg_ignore[0]); // TODO this probably isn't localization friendly
     }
 
-    if (u.has_effect("laserlocked")) {
+    if (u.has_effect( effect_laserlocked)) {
         // Automatic and mandatory safemode.  Make BLOODY sure the player notices!
         add_msg(m_warning, _("You are being laser-targeted, %s to ignore."),
                 msg_ignore.c_str());
@@ -11813,21 +11906,21 @@ bool game::disable_robot( const tripoint &p )
     // Manhacks are special, they have their own menu here.
     if( mid == mon_manhack ) {
         int choice = 0;
-        if( critter.has_effect( "docile" ) ) {
+        if( critter.has_effect( effect_docile ) ) {
             choice = menu( true, _( "Reprogram the manhack?" ), _( "Engage targets." ), _( "Cancel" ), NULL );
         } else {
             choice = menu( true, _( "Reprogram the manhack?" ), _( "Follow me." ), _( "Cancel" ), NULL );
         }
         switch( choice ) {
             case 1:
-                if( critter.has_effect( "docile" ) ) {
-                    critter.remove_effect( "docile" );
+                if( critter.has_effect( effect_docile ) ) {
+                    critter.remove_effect( effect_docile );
                     if( one_in( 3 ) ) {
                         add_msg( _( "The %s hovers momentarily as it surveys the area." ),
                                  critter.name().c_str() );
                     }
                 } else {
-                    critter.add_effect( "docile", 1, num_bp, true );
+                    critter.add_effect( effect_docile, 1, num_bp, true );
                     if( one_in( 3 ) ) {
                         add_msg( _( "The %s lets out a whirring noise and starts to follow you." ),
                                  critter.name().c_str() );
@@ -11851,7 +11944,7 @@ bool game::plmove(int dx, int dy, int dz)
     }
 
     tripoint dest_loc;
-    if( dz == 0 && u.has_effect( "stunned" ) ) {
+    if( dz == 0 && u.has_effect( effect_stunned ) ) {
         dest_loc.x = rng(u.posx() - 1, u.posx() + 1);
         dest_loc.y = rng(u.posy() - 1, u.posy() + 1);
         dest_loc.z = u.posz();
@@ -11874,7 +11967,7 @@ bool game::plmove(int dx, int dy, int dz)
         return false;
     }
 
-    if( u.has_effect( "amigara" ) ) {
+    if( u.has_effect( effect_amigara ) ) {
         int curdist = INT_MAX;
         int newdist = INT_MAX;
         const tripoint minp = tripoint( 0, 0, u.posz() );
@@ -11923,7 +12016,7 @@ bool game::plmove(int dx, int dy, int dz)
     if( mondex != -1 ) {
         monster &critter = zombie(mondex);
         if( critter.friendly == 0 &&
-            !critter.has_effect("pet") &&
+            !critter.has_effect( effect_pet) &&
             !critter.type->has_flag(MF_VERMIN) ) {
             if (u.has_destination()) {
                 add_msg(m_warning, _("Monster in the way. Auto-move canceled."));
@@ -11931,7 +12024,7 @@ bool game::plmove(int dx, int dy, int dz)
                 u.clear_destination();
                 return false;
             }
-            if (u.has_effect("relax_gas")) {
+            if (u.has_effect( effect_relax_gas)) {
                 if (one_in(8)) {
                     add_msg(m_good, _("Your willpower asserts itself, and so do you!"));
                 }
@@ -12050,7 +12143,7 @@ bool game::plmove(int dx, int dy, int dz)
     }
 
     // Invalid move
-    const bool waste_moves = u.has_effect("blind") || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold") || u.has_effect("stunned");
+    const bool waste_moves = u.has_effect( effect_blind ) || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold") || u.has_effect( effect_stunned );
     if( waste_moves || dest_loc.z != u.posz() ) {
         // Only lose movement if we're blind
         add_msg(_("You bump into a %s!"), m.name(dest_loc).c_str());
@@ -12212,7 +12305,7 @@ bool game::walk_move( const tripoint &dest_loc )
             }
         }
 
-        if (!(u.has_effect("blind") || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold"))) {
+        if (!(u.has_effect( effect_blind) || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold"))) {
             const trap &tr = m.tr_at(dest_loc);
             // Hack for now, later ledge should stop being a trap
             if( tr.can_see(dest_loc, u) && !tr.is_benign() &&
@@ -12306,16 +12399,16 @@ void game::place_player( const tripoint &dest_loc )
                     body_part_name_accusative(bp).c_str(),
                     m.has_flag_ter( "SHARP", dest_loc ) ? m.tername(dest_loc).c_str() : m.furnname(dest_loc).c_str() );
             if ((u.has_trait("INFRESIST")) && (one_in(1024))) {
-            u.add_effect("tetanus", 1, num_bp, true);
+            u.add_effect( effect_tetanus, 1, num_bp, true);
             } else if ((!u.has_trait("INFIMMUNE") || !u.has_trait("INFRESIST")) && (one_in(256))) {
-              u.add_effect("tetanus", 1, num_bp, true);
+              u.add_effect( effect_tetanus, 1, num_bp, true);
              }
         }
     }
     if (m.has_flag("UNSTABLE", dest_loc)) {
-        u.add_effect("bouldering", 1, num_bp, true);
-    } else if (u.has_effect("bouldering")) {
-        u.remove_effect("bouldering");
+        u.add_effect( effect_bouldering, 1, num_bp, true);
+    } else if (u.has_effect( effect_bouldering)) {
+        u.remove_effect( effect_bouldering);
     }
     if (u.has_trait("LEG_TENT_BRACE") && (!u.footwear_factor() ||
                                              (u.footwear_factor() == .5 && one_in(2)))) {
@@ -12351,9 +12444,9 @@ void game::place_player( const tripoint &dest_loc )
         sounds::sound(u.pos(), 40, _("You emit a rattling sound."));
     }
     // If we moved out of the nonant, we need update our map data
-    if (m.has_flag("SWIMMABLE", dest_loc) && u.has_effect("onfire")) {
+    if (m.has_flag("SWIMMABLE", dest_loc) && u.has_effect( effect_onfire)) {
         add_msg(_("The water puts out the flames!"));
-        u.remove_effect("onfire");
+        u.remove_effect( effect_onfire);
     }
 
     const int mondex = mon_at( dest_loc );
@@ -12411,7 +12504,7 @@ void game::place_player( const tripoint &dest_loc )
 
     // List items here
     if( !m.has_flag( "SEALED", u.pos() ) ) {
-        if ((u.has_effect("blind") || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold")) && !m.i_at(u.pos()).empty()) {
+        if ((u.has_effect( effect_blind) || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold")) && !m.i_at(u.pos()).empty()) {
             add_msg(_("There's something here, but you can't see what it is."));
         } else if( m.has_items(u.pos()) ) {
             std::vector<std::string> names;
@@ -12886,7 +12979,7 @@ void game::on_move_effects()
             u.toggle_move_mode();
         }
         if( one_in( u.stamina ) ) {
-            u.add_effect("winded", 3);
+            u.add_effect( effect_winded, 3);
         }
     }
 
@@ -12901,13 +12994,13 @@ void game::plswim( const tripoint &p )
         debugmsg("Tried to swim in %s!", m.tername(p).c_str());
         return;
     }
-    if (u.has_effect("onfire")) {
+    if (u.has_effect( effect_onfire)) {
         add_msg(_("The water puts out the flames!"));
-        u.remove_effect("onfire");
+        u.remove_effect( effect_onfire);
     }
-    if (u.has_effect("glowing")) {
+    if (u.has_effect( effect_glowing)) {
         add_msg(_("The water washes off the glowing goo!"));
-        u.remove_effect("glowing");
+        u.remove_effect( effect_glowing);
     }
     int movecost = u.swim_speed();
     u.practice( skill_id( "swimming" ), u.is_underwater() ? 2 : 1);
@@ -13818,7 +13911,7 @@ void game::update_stair_monsters()
                     if (!(resiststhrow) && (u.get_dodge() + rng(0, 3) < 12)) {
                         // dodge 12 - never get downed
                         // 11.. avoid 75%; 10.. avoid 50%; 9.. avoid 25%
-                        u.add_effect("downed", 2);
+                        u.add_effect( effect_downed, 2);
                         msg = _("The %s pushed you back hard!");
                     } else {
                         msg = _("The %s pushed you back!");
@@ -13863,7 +13956,7 @@ void game::update_stair_monsters()
                     other.moves -= 50;
                     std::string msg = "";
                     if (one_in(creature_throw_resist)) {
-                        other.add_effect("downed", 2);
+                        other.add_effect( effect_downed, 2);
                         msg = _("The %1$s pushed the %2$s hard.");
                     } else {
                         msg = _("The %1$s pushed the %2$s.");
@@ -14071,7 +14164,7 @@ void game::teleport(player *p, bool add_teleglow)
     bool is_u = (p == &u);
 
     if (add_teleglow) {
-        p->add_effect("teleglow", 300);
+        p->add_effect( effect_teleglow, 300);
     }
     do {
         newx = p->posx() + rng(0, SEEX * 2) - SEEX;
@@ -14624,7 +14717,7 @@ void game::process_artifact(item *it, player *p)
 
         case AEP_EVIL:
             if (one_in(150)) { // Once every 15 minutes, on average
-                p->add_effect("evil", 300);
+                p->add_effect( effect_evil, 300);
                 if( it->is_armor() ) {
                     if( !worn ) {
                     add_msg(_("You have an urge to wear the %s."),

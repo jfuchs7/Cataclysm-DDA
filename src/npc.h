@@ -683,8 +683,7 @@ public:
  void update_worst_item_value(); // Find the worst value in our inventory
  int  value(const item &it);
     bool wear_if_wanted( const item &it );
- virtual bool wield(item* it, bool) override;
- virtual bool wield(item* it);
+    virtual bool wield( item& it ) override;
  bool has_healing_item();
  bool has_painkiller();
  bool took_painkiller() const;
@@ -725,7 +724,7 @@ public:
  int choose_escape_item(); // Returns item position of our best escape aid
 
 // Helper functions for ranged combat
- int  confident_range(int position = -1); // >= 50% chance to hit
+ int confident_range( int position = -1 );
  /**
   * Check if this NPC is blocking movement from the given position
   */

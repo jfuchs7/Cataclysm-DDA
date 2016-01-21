@@ -56,6 +56,10 @@ const species_id BIRD( "BIRD" );
 const species_id INSECT( "INSECT" );
 const species_id ROBOT( "ROBOT" );
 
+const efftype_id effect_cig( "cig" );
+const efftype_id effect_shakes( "shakes" );
+const efftype_id effect_weed_high( "weed_high" );
+
 enum item::LIQUID_FILL_ERROR : int {
     L_ERR_NONE, L_ERR_NO_MIX, L_ERR_NOT_CONTAINER, L_ERR_NOT_WATERTIGHT,
     L_ERR_NOT_SEALED, L_ERR_FULL
@@ -697,20 +701,16 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                                               mod->tname().c_str() ) ) );
         }
         islot_gun *gun = mod->type->gun.get();
-        int ammo_dam = 0;
-        int ammo_range = 0;
-        int ammo_recoil = 0;
-        int ammo_pierce = 0;
-        int ammo_dispersion = 0;
-        bool has_ammo = (mod->has_curammo() && mod->ammo_remaining() > 0);
-        if (has_ammo) {
-            const auto curammo = mod->get_curammo()->ammo.get();
-            ammo_dam = curammo->damage;
-            ammo_range = curammo->range;
-            ammo_recoil = curammo->recoil;
-            ammo_pierce = curammo->pierce;
-            ammo_dispersion = curammo->dispersion;
-        }
+        const auto curammo = mod->ammo_data();
+
+        bool has_ammo = curammo && mod->ammo_remaining();
+
+        int ammo_dam        = has_ammo ? curammo->ammo->damage     : 0;
+        int ammo_range      = has_ammo ? curammo->ammo->range      : 0;
+        int ammo_recoil     = has_ammo ? curammo->ammo->recoil     : 0;
+        int ammo_pierce     = has_ammo ? curammo->ammo->pierce     : 0;
+        int ammo_dispersion = has_ammo ? curammo->ammo->dispersion : 0;
+
         const auto skill = &mod->gun_skill().obj();
 
         info.push_back( iteminfo( "GUN", _( "Skill used: " ), "<info>" + skill->name() + "</info>" ) );
@@ -2219,7 +2219,7 @@ int item::price() const
     }
 
     // tools, guns and auxiliary gunmods may contain ammunition which can affect the price
-    if( ammo_remaining() > 0 && has_curammo() ) {
+    if( ammo_remaining() > 0 && ammo_current() != "null" ) {
         item tmp( ammo_current(), 0 );
         tmp.charges = charges;
         ret += tmp.price();
@@ -2252,12 +2252,10 @@ int item::weight() const
         ret *= charges;
 
     } else if( ammo_capacity() > 0 ) {
-        if( ammo_data() ) {
+        if ( ammo_type() == "plutonium" ) {
+            ret += ammo_remaining() * find_type( default_ammo( ammo_type() ) )->weight / PLUTONIUM_CHARGES;
+        } else if( ammo_data() ) {
             ret += ammo_remaining() * ammo_data()->weight;
-        } else if ( ammo_type() == "plutonium" ) {
-            ret += ammo_remaining() * find_type( default_ammo( ammo_type() ) )->weight / 500;
-        } else if ( ammo_type() != "null" ) {
-            ret += ammo_remaining() * find_type( default_ammo( ammo_type() ) )->weight;
         }
 
     } else if( is_corpse() ) {
@@ -2520,25 +2518,31 @@ long item::get_property_long( const std::string& prop, long def ) const
     return def;
 }
 
-bool item::has_quality(std::string quality_id) const
+int item::get_quality( const std::string &quality_id ) const
 {
-    return has_quality(quality_id, 1);
+    int return_quality = INT_MIN;
+    for( const auto &quality : type->qualities ) {
+        if( quality.first == quality_id ) {
+            return_quality = quality.second;
+        }
+    }
+    for( auto &itm : contents ) {
+        return_quality = std::max( return_quality, itm.get_quality( quality_id ) );
+    }
+
+    return return_quality;
 }
 
-bool item::has_quality(std::string quality_id, int quality_value) const
+bool item::has_quality( std::string quality_id ) const
 {
-    for( const auto &quality : type->qualities ) {
-        if( quality.first == quality_id && quality.second >= quality_value ) {
-            return true;
-        }
-    }
+    return has_quality( quality_id, 1 );
+}
 
-    for( const auto &content : contents ) {
-        if( content.has_quality( quality_id, quality_value ) ) {
-            return true;
-        }
+bool item::has_quality( std::string quality_id, int quality_value ) const
+{
+    if( get_quality( quality_id ) >= quality_value ) {
+        return true;
     }
-
     return false;
 }
 
@@ -2952,6 +2956,11 @@ int item::stab_resist(bool to_self) const
 
 int item::acid_resist( bool to_self ) const
 {
+    if( to_self ) {
+        // Currently no items are damaged by acid
+        return INT_MAX;
+    }
+
     float resist = 0.0;
     if( is_null() ) {
         return 0.0;
@@ -3028,6 +3037,9 @@ int item::chip_resistance( bool worst ) const
 int item::damage_resist( damage_type dt, bool to_self ) const
 {
     switch( dt ) {
+        case DT_NULL:
+        case NUM_DT:
+            return 0;
         case DT_TRUE:
         case DT_BIOLOGICAL:
         case DT_ELECTRIC:
@@ -3678,8 +3690,8 @@ int item::gun_dispersion( bool with_ammo ) const
     }
     dispersion_sum += damage * 60;
     dispersion_sum = std::max(dispersion_sum, 0);
-    if( with_ammo && has_curammo() ) {
-        dispersion_sum += get_curammo()->ammo->dispersion;
+    if( with_ammo && ammo_data() ) {
+        dispersion_sum += ammo_data()->ammo->dispersion;
     }
     dispersion_sum = std::max(dispersion_sum, 0);
     return dispersion_sum;
@@ -3746,8 +3758,8 @@ int item::gun_damage( bool with_ammo ) const
         return 0;
     }
     int ret = type->gun->damage;
-    if( with_ammo && has_curammo() ) {
-        ret += get_curammo()->ammo->damage;
+    if( with_ammo && ammo_data() ) {
+        ret += ammo_data()->ammo->damage;
     }
     for( auto & elem : contents ) {
         if( elem.is_gunmod() ) {
@@ -3764,8 +3776,8 @@ int item::gun_pierce( bool with_ammo ) const
         return 0;
     }
     int ret = type->gun->pierce;
-    if( with_ammo && has_curammo() ) {
-        ret += get_curammo()->ammo->pierce;
+    if( with_ammo && ammo_data() ) {
+        ret += ammo_data()->ammo->pierce;
     }
     for( auto &elem : contents ) {
         if( elem.is_gunmod() ) {
@@ -3803,8 +3815,8 @@ int item::gun_recoil( bool with_ammo ) const
         return 0;
     }
     int ret = type->gun->recoil;
-    if( with_ammo && has_curammo() ) {
-        ret += get_curammo()->ammo->recoil;
+    if( with_ammo && ammo_data() ) {
+        ret += ammo_data()->ammo->recoil;
     }
     for( auto & elem : contents ) {
         if( elem.is_gunmod() ) {
@@ -3826,13 +3838,13 @@ int item::gun_range( bool with_ammo ) const
             ret += elem.type->gunmod->range;
         }
     }
-    if( has_flag( "NO_AMMO" ) && !has_curammo() ) {
+    if( has_flag( "NO_AMMO" ) && !ammo_data() ) {
         return ret;
     }
     if( with_ammo && is_charger_gun() ) {
         ret += 5 + charges * 5;
-    } else if( with_ammo && has_curammo() ) {
-        ret += get_curammo()->ammo->range;
+    } else if( with_ammo && ammo_data() ) {
+        ret += ammo_data()->ammo->range;
     }
     return std::max( 0, ret );
 }
@@ -4154,21 +4166,25 @@ item_location item::pick_reload_ammo( player &u, bool interactive ) const
 }
 
 // Helper to handle ejecting casings from guns that require them to be manually extracted.
-static void eject_casings( player &p, item *reload_target, itype_id casing_type )
+static void eject_casings( player &p, item& target )
 {
-    if( reload_target->has_flag("RELOAD_EJECT") && casing_type != "NULL" && !casing_type.empty() ) {
-        const int num_casings = reload_target->get_var( "CASINGS", 0 );
-        if( num_casings > 0 ) {
-            item casing( casing_type, 0);
-            // Casings need a count of one to stack properly.
-            casing.charges = 1;
-            // Drop all the casings on the ground under the player.
-            for( int i = 0; i < num_casings; ++i ) {
-                g->m.add_item_or_charges(p.posx(), p.posy(), casing);
-            }
-            reload_target->erase_var( "CASINGS" );
-        }
+    const auto curammo = target.ammo_data();
+
+    if( !target.has_flag( "RELOAD_EJECT" ) || !curammo ||
+        curammo->ammo->casing == "NULL" || curammo->ammo->casing.empty() ) {
+        return;
     }
+
+    // Casings need a count of one to stack properly.
+    item casing( curammo->ammo->casing, calendar::turn );
+    casing.charges = 1;
+
+    // Drop all the casings on the ground under the player.
+    for( auto i = target.get_var( "CASINGS", 0 ); i > 0 ; --i ) {
+        g->m.add_item_or_charges( p.posx(), p.posy(), casing );
+    }
+
+    target.erase_var( "CASINGS" );
 }
 
 bool item::reload( player &u, int pos )
@@ -4257,18 +4273,17 @@ bool item::reload( player &u, item_location loc )
 
     // If we found a suitable target, try and reload it
     if ( target ) {
-        if( has_curammo() ) {
-            eject_casings( u, target, get_curammo()->ammo->casing );
-        }
+
+        eject_casings( u, *target );
 
         target->set_curammo( *ammo );
 
         if( ammo_type() == "plutonium" ) {
             // always consume at least one cell but never more than actually available
-            auto cells = std::min(qty / 500 + (qty % 500 != 0), ammo->charges);
+            auto cells = std::min(qty / PLUTONIUM_CHARGES + (qty % PLUTONIUM_CHARGES != 0), ammo->charges);
             ammo->charges -= cells;
             // any excess is wasted rather than overfilling the target
-            target->charges += std::min(cells * 500, qty);
+            target->charges += std::min(cells * PLUTONIUM_CHARGES, qty);
         } else {
             qty = std::min(qty, ammo->charges);
             ammo->charges   -= qty;
@@ -4785,20 +4800,6 @@ int item::max_charges_from_flag(std::string flagName)
     return maxCharges;
 }
 
-int item::butcher_factor() const
-{
-    static const std::string BUTCHER_QUALITY_ID( "BUTCHER" );
-    const auto it = type->qualities.find( BUTCHER_QUALITY_ID );
-    if( it != type->qualities.end() ) {
-        return it->second;
-    }
-    int butcher_factor = INT_MIN;
-    for( auto &itm : contents ) {
-        butcher_factor = std::max( butcher_factor, itm.butcher_factor() );
-    }
-    return butcher_factor;
-}
-
 static const std::string USED_BY_IDS( "USED_BY_IDS" );
 bool item::already_used_by_player(const player &p) const
 {
@@ -4824,14 +4825,14 @@ void item::mark_as_used_by_player(const player &p)
     used_by_ids += string_format( "%d;", p.getID() );
 }
 
-VisitResponse item::visit( const std::function<VisitResponse(item&)>& func ) {
+VisitResponse item::visit_items( const std::function<VisitResponse(item&)>& func ) {
     switch( func( *this ) ) {
         case VisitResponse::ABORT:
             return VisitResponse::ABORT;
 
         case VisitResponse::NEXT:
             for( auto& e : contents ) {
-                if( e.visit( func ) == VisitResponse::ABORT ) {
+                if( e.visit_items( func ) == VisitResponse::ABORT ) {
                     return VisitResponse::ABORT;
                 }
             }
@@ -4845,8 +4846,14 @@ VisitResponse item::visit( const std::function<VisitResponse(item&)>& func ) {
     return VisitResponse::ABORT;
 }
 
-VisitResponse item::visit( const std::function<VisitResponse(const item&)>& func ) const {
-    return const_cast<item *>( this )->visit( static_cast<const std::function<VisitResponse(item&)>&>( func ) );
+VisitResponse item::visit_items( const std::function<VisitResponse(const item&)>& func ) const {
+    return const_cast<item *>( this )->visit_items( static_cast<const std::function<VisitResponse(item&)>&>( func ) );
+}
+
+bool item::contains( const std::function<bool(const item&)>& filter ) const {
+    return visit_items( [&filter] ( const item& e ) {
+        return filter( e ) ? VisitResponse::ABORT : VisitResponse::NEXT;
+    }) == VisitResponse::ABORT;
 }
 
 bool item::can_holster ( const item& obj ) const {
@@ -5047,15 +5054,15 @@ bool item::process_litcig( player *carrier, const tripoint &pos )
             }
             carrier->add_msg_if_player( m_neutral, _( "You take a puff of your %s." ), tname().c_str() );
             if( has_flag( "TOBACCO" ) ) {
-                carrier->add_effect( "cig", duration );
+                carrier->add_effect( effect_cig, duration );
             } else {
-                carrier->add_effect( "weed_high", duration / 2 );
+                carrier->add_effect( effect_weed_high, duration / 2 );
             }
             g->m.add_field( tripoint( pos.x + rng( -1, 1 ), pos.y + rng( -1, 1 ), pos.z ), smoke_type, 2, 0 );
             carrier->moves -= 15;
         }
 
-        if( ( carrier->has_effect( "shakes" ) && one_in( 10 ) ) ||
+        if( ( carrier->has_effect( effect_shakes ) && one_in( 10 ) ) ||
             ( carrier->has_trait( "JITTERY" ) && one_in( 200 ) ) ) {
             carrier->add_msg_if_player( m_bad, _( "Your shaking hand causes you to drop your %s." ),
                                         tname().c_str() );
@@ -5089,7 +5096,7 @@ bool item::process_litcig( player *carrier, const tripoint &pos )
         } else { // joint
             make( "joint_roach" );
             if( carrier != nullptr ) {
-                carrier->add_effect( "weed_high", 10 ); // one last puff
+                carrier->add_effect( effect_weed_high, 10 ); // one last puff
                 g->m.add_field( tripoint( pos.x + rng( -1, 1 ), pos.y + rng( -1, 1 ), pos.z ), fd_weedsmoke, 2, 0 );
                 weed_msg( carrier );
             }
@@ -5258,7 +5265,7 @@ bool item::update_charger_gun_ammo()
     if( ammo_current() != CHARGER_GUN_AMMO_ID ) {
         set_curammo( CHARGER_GUN_AMMO_ID );
     }
-    auto tmpammo = get_curammo()->ammo.get();
+    const auto tmpammo = ammo_data()->ammo.get();
 
     long charges = num_charges();
     tmpammo->damage = charges * charges;
