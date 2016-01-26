@@ -311,7 +311,6 @@ player::player() : Character()
   body_wetness[i] = 0;
  }
  nv_cached = false;
- pda_cached = false;
  volume = 0;
 
  memorial_log.clear();
@@ -497,7 +496,6 @@ void player::reset_stats()
     if( calendar::once_every(MINUTES(1)) ) {
         update_mental_focus();
     }
-    pda_cached = false;
 
     recalc_sight_limits();
     recalc_speed_bonus();
@@ -595,7 +593,6 @@ void player::process_turn()
 void player::action_taken()
 {
     nv_cached = false;
-    pda_cached = false;
 }
 
 void player::update_morale()
@@ -3443,16 +3440,17 @@ void player::disp_morale()
     delwin(w);
 }
 
-int player::print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *target )
-{
+int player::print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *target, int predicted_recoil ) {
     // Window width minus borders.
     const int window_width = getmaxx( w ) - 2;
     // This is absolute accuracy for the player.
     // TODO: push the calculations duplicated from Creature::deal_projectile_attack() and
     // Creature::projectile_attack() into shared methods.
     // Dodge is intentionally not accounted for.
+
+    mvwprintw(w, line_number++, 1, _("Symbols: * = Headshot + = Hit | = Graze"));
     const double aim_level =
-        recoil + driving_recoil + get_weapon_dispersion( weapon, false );
+        predicted_recoil + driving_recoil + get_weapon_dispersion( weapon, false );
     const double range = rl_dist( pos(), target->pos() );
     const double missed_by = aim_level * 0.00021666666666666666 * range;
     const double hit_rating = missed_by / std::max(double(get_speed()) / 80., 1.0);
@@ -3460,10 +3458,10 @@ int player::print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *
     // This simplifies the calculation greatly, that's intentional.
     const std::array<std::pair<double, char>, 3> ratings =
         {{ std::make_pair(0.1, '*'), std::make_pair(0.4, '+'), std::make_pair(0.6, '|') }};
-    const std::string confidence_label = _("Confidence: ");
-    const int confidence_width = window_width - utf8_width( confidence_label );
+    const std::string confidence_label = _("Confidence ");
+    const int confidence_width = window_width - utf8_width( confidence_label ) - 2;
     int used_width = 0;
-    std::string confidence_meter;
+    std::string confidence_meter("[");
     for( auto threshold : ratings ) {
         const double confidence =
             std::min( 1.0, std::max( 0.0, threshold.first / hit_rating ) );
@@ -3471,17 +3469,23 @@ int player::print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *
         used_width += confidence_meter_width;
         confidence_meter += std::string( confidence_meter_width, threshold.second );
     }
+    confidence_meter += std::string( confidence_width - used_width, ' ' );
+    confidence_meter += std::string( "]" );
     mvwprintw(w, line_number++, 1, "%s%s",
               confidence_label.c_str(), confidence_meter.c_str() );
 
     // This is a relative measure of how steady the player's aim is,
     // 0 it is the best the player can do.
-    const double steady_score = recoil - weapon->sight_dispersion( -1 );
+    const double steady_score = predicted_recoil - weapon->sight_dispersion( -1 );
     // Fairly arbitrary cap on steadiness...
     const double steadiness = std::max( 0.0, 1.0 - (steady_score / 250) );
-    const std::string steadiness_label = _("Steadiness: ");
-    const int steadiness_width = window_width - utf8_width( steadiness_label );
-    const std::string steadiness_meter = std::string( steadiness_width * steadiness, '*' );
+    const std::string steadiness_label = _("Steadiness ");
+    const int steadiness_width = window_width - utf8_width( steadiness_label ) - 2;
+    const int steadiness_meter_width = steadiness_width * steadiness;
+    std::string steadiness_meter("[");
+    steadiness_meter += std::string( steadiness_meter_width, '*' );
+    steadiness_meter += std::string( steadiness_width - steadiness_meter_width, ' ' );
+    steadiness_meter += std::string( "]" );
     mvwprintw(w, line_number++, 1, "%s%s",
               steadiness_label.c_str(), steadiness_meter.c_str() );
     return line_number;
@@ -4316,18 +4320,6 @@ body_part player::get_random_body_part( bool main ) const
     return random_body_part( main );
 }
 
-bool player::has_pda()
-{
-    static bool pda = false;
-    if ( !pda_cached ) {
-      pda_cached = true;
-      pda = has_amount("pda", 1)  || has_amount("pda_flashlight", 1);
-    }
-
-    return pda;
-}
-
-
 bool player::has_alarm_clock() const
 {
     return ( has_item_with_flag("ALARMCLOCK") ||
@@ -4595,7 +4587,7 @@ int player::throw_dex_mod(bool return_stat_effect) const
 // and number of moves per MOC is too slow. (fastest is one MOC/move)
 // A worst case of 1 MOC per 10 moves is acceptable, and it scales up
 // indefinitely, though the smallest unit of aim time is 10 moves.
-int player::aim_per_time( item *gun ) const
+int player::aim_per_time( item *gun, int for_recoil ) const
 {
     // Account for Dexterity, weapon skill, weapon mods and flags,
     int speed_penalty = 0;
@@ -4605,13 +4597,19 @@ int player::aim_per_time( item *gun ) const
     // Ranges from 0 - 12 after adjustment.
     speed_penalty += ranged_dex_mod() / 15;
     // Ranges from 0 - 10
-    speed_penalty += gun->aim_speed( recoil );
+    speed_penalty += gun->aim_speed( for_recoil );
     // TODO: should any conditions, mutations, etc affect this?
     // Probably CBMs too.
     int improvement_amount = std::max( 1, 32 - speed_penalty );
     // Improvement rate is capped by the max aim level of the gun sight being used.
-    return std::min( improvement_amount, recoil - gun->sight_dispersion( recoil ) );
+    return std::min( improvement_amount, for_recoil - gun->sight_dispersion( for_recoil ) );
 }
+
+int player::aim_per_time( item *gun ) const
+{
+    return aim_per_time( gun, recoil );
+}
+
 
 int player::read_speed(bool return_stat_effect) const
 {
@@ -10530,6 +10528,8 @@ bool player::wield( item& target )
     if( target.is_null() ) {
         uimenu prompt;
         prompt.text = string_format( _( "Stop wielding %s?" ), weapon.tname().c_str() );
+        prompt.return_invalid = true;
+
         std::vector<std::function<void()>> actions;
 
         prompt.addentry( -1, volume_carried() + weapon.volume() <= volume_capacity(), '1', _( "Store in inventory" ) );
@@ -11365,33 +11365,40 @@ void player::use_wielded() {
 
 hint_rating player::rate_action_reload( const item &it ) const
 {
+    hint_rating res = HINT_CANT;
+
     // Guns may contain additional reloadable mods so check these first
-    if( it.is_gun() ) {
-        for( const auto& mod : it.contents ) {
-            // @todo deprecate spare magazine
-            if( mod.typeId() == "spare_mag" && mod.charges < it.ammo_capacity() ) {
-                return HINT_GOOD;
-            }
+    for( const auto& mod : it.contents ) {
+        // @todo deprecate spare magazine
+        if( mod.typeId() == "spare_mag" && mod.charges < it.ammo_capacity() ) {
+            return HINT_GOOD;
+        }
 
-            if( mod.ammo_capacity() <= 0 ||
-                mod.ammo_type() == "NULL" ||
-                mod.has_flag( "NO_RELOAD" ) ||
-                mod.has_flag( "RELOAD_AND_SHOOT" ) ) {
-                continue;
-            }
+        if( mod.is_auxiliary_gunmod() ) {
+            switch( rate_action_reload( mod ) ) {
+                case HINT_GOOD:
+                    return HINT_GOOD;
 
-            if (mod.is_auxiliary_gunmod() && mod.ammo_remaining() < mod.ammo_capacity() ) {
-                return HINT_GOOD;
+                case HINT_CANT:
+                    continue;
+
+                case HINT_IFFY:
+                    res = HINT_IFFY;
             }
         }
     }
 
-    // Now check the base item
-    if( it.ammo_capacity() <= 0 ||
-        it.ammo_type() == "NULL" ||
-        it.has_flag( "NO_RELOAD" ) ||
-        it.has_flag( "RELOAD_AND_SHOOT" ) ) {
-        return HINT_CANT;
+    if( it.has_flag( "NO_RELOAD" ) || it.has_flag( "RELOAD_AND_SHOOT" ) ) {
+        return res;
+    }
+
+    // if item uses detachable magazines do we already have one loaded?
+    if( !it.magazine_integral() ) {
+        return it.magazine_current() ? HINT_IFFY : HINT_GOOD;
+    }
+
+    if( it.ammo_capacity() <= 0 || it.ammo_type() == "NULL" ) {
+        return res;
     }
 
     return it.ammo_remaining() < it.ammo_capacity() ? HINT_GOOD : HINT_IFFY;
@@ -12350,13 +12357,13 @@ void player::try_to_sleep()
               ter_at_pos == t_dirtmound || ter_at_pos == t_pit_shallow ||
               ter_at_pos == t_grass) && !veh &&
               furn_at_pos == f_null ) {
-            add_msg(m_good, _("You relax as your roots embrace the soil."));
+            add_msg_if_player(m_good, _("You relax as your roots embrace the soil."));
         } else if (veh) {
-            add_msg(m_bad, _("It's impossible to sleep in this wheeled pot!"));
+            add_msg_if_player(m_bad, _("It's impossible to sleep in this wheeled pot!"));
         } else if (furn_at_pos != f_null) {
-            add_msg(m_bad, _("The humans' furniture blocks your roots. You can't get comfortable."));
+            add_msg_if_player(m_bad, _("The humans' furniture blocks your roots. You can't get comfortable."));
         } else { // Floor problems
-            add_msg(m_bad, _("Your roots scrabble ineffectively at the unyielding surface."));
+            add_msg_if_player(m_bad, _("Your roots scrabble ineffectively at the unyielding surface."));
         }
     }
     if (has_trait("WEB_WALKER")) {
@@ -12371,22 +12378,20 @@ void player::try_to_sleep()
             if (!webforce) {
             // At this point, it's kinda weird, but surprisingly comfy...
             if (web >= 3) {
-                add_msg(m_good, _("These thick webs support your weight, and are strangely comfortable..."));
+                add_msg_if_player(m_good, _("These thick webs support your weight, and are strangely comfortable..."));
                 websleeping = true;
-            }
-            else if (web > 0) {
-                add_msg(m_info, _("You try to sleep, but the webs get in the way.  You brush them aside."));
+            } else if( web > 0 ) {
+                add_msg_if_player(m_info, _("You try to sleep, but the webs get in the way.  You brush them aside."));
                 g->m.remove_field( pos(), fd_web );
             }
         } else {
             // Here, you're just not comfortable outside a nice thick web.
             if (web >= 3) {
-                add_msg(m_good, _("You relax into your web."));
+                add_msg_if_player(m_good, _("You relax into your web."));
                 websleeping = true;
-            }
-            else {
-                add_msg(m_bad, _("You try to sleep, but you feel exposed and your spinnerets keep twitching."));
-                add_msg(m_info, _("Maybe a nice thick web would help you sleep."));
+            } else {
+                add_msg_if_player(m_bad, _("You try to sleep, but you feel exposed and your spinnerets keep twitching."));
+                add_msg_if_player(m_info, _("Maybe a nice thick web would help you sleep."));
             }
         }
     }
@@ -12401,9 +12406,9 @@ void player::try_to_sleep()
          ter_at_pos == t_improvised_shelter || (in_shell) || (websleeping) ||
          (veh && veh->part_with_feature (vpart, "SEAT") >= 0) ||
          (veh && veh->part_with_feature (vpart, "BED") >= 0)) ) {
-        add_msg(m_good, _("This is a comfortable place to sleep."));
+        add_msg_if_player(m_good, _("This is a comfortable place to sleep."));
     } else if (ter_at_pos != t_floor && !plantsleep) {
-        add_msg( ter_at_pos.obj().movecost <= 2 ?
+        add_msg_if_player( ter_at_pos.obj().movecost <= 2 ?
                  _("It's a little hard to get to sleep on this %s.") :
                  _("It's hard to get to sleep on this %s."),
                  ter_at_pos.obj().name.c_str() );
@@ -13754,21 +13759,38 @@ std::string player::weapname() const
         std::stringstream str;
         str << weapon.type_name();
 
-        if( weapon.ammo_capacity() > 0 && !weapon.has_flag( "RELOAD_AND_SHOOT" ) ) {
-            str << " (" << weapon.ammo_remaining() << "/" << weapon.ammo_capacity();
+        // Is either the base item or at least one auxiliary gunmod loaded (includes empty magazines)
+        bool base = weapon.ammo_capacity() > 0 && !weapon.has_flag( "RELOAD_AND_SHOOT" );
+        bool aux = std::any_of( weapon.contents.begin(), weapon.contents.end(), [&]( const item& e ) {
+            return e.is_auxiliary_gunmod() && e.ammo_capacity() > 0 && !e.has_flag( "RELOAD_AND_SHOOT" );
+        } );
 
-            // @todo deprecate handling of spare magazine
-            int spare_mag = weapon.has_gunmod( "spare_mag" );
-            if( spare_mag != -1 ) {
-                str << " +" << weapon.contents[spare_mag].charges;
-            }
-
-            for( const auto& mod : weapon.contents ) {
-                if( mod.is_auxiliary_gunmod() ) {
-                    str << " +" << mod.ammo_remaining();
+        if( base || aux ) {
+            str << " (";
+            if( base ) {
+                str << weapon.ammo_remaining();
+                if( weapon.magazine_integral() ) {
+                    str << "/" << weapon.ammo_capacity();
                 }
+                // @todo deprecate handling of spare magazine
+                int spare_mag = weapon.has_gunmod( "spare_mag" );
+                if( spare_mag != -1 ) {
+                    str << " +" << weapon.contents[spare_mag].charges;
+                }
+            } else {
+                str << "---";
             }
             str << ")";
+
+            for( const auto& mod : weapon.contents ) {
+                if( mod.is_auxiliary_gunmod() && mod.ammo_capacity() > 0 && !mod.has_flag( "RELOAD_AND_SHOOT" ) ) {
+                    str << " (" << mod.ammo_remaining();
+                    if( mod.magazine_integral() ) {
+                        str << "/" << mod.ammo_capacity();
+                    }
+                    str << ")";
+                }
+            }
         }
         return str.str();
 

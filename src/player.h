@@ -176,7 +176,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** Provides the window and detailed morale data */
         void disp_morale();
         /** Print the bars indicating how well the player is currently aiming.**/
-        int print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *target);
+        int print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *target, int predicted_recoil);
         /** Returns the gun mode indicator, ready to be printed, contains color-tags. **/
         std::string print_gun_mode() const;
         /** Returns the colored recoil indicator (contains color-tags). **/
@@ -340,8 +340,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** Picks a random body part, adjusting for mutations, broken body parts etc. */
         body_part get_random_body_part( bool main ) const override;
 
-        /** Returns true if the player has a pda */
-        bool has_pda();
         /** Returns true if the player or their vehicle has an alarm clock */
         bool has_alarm_clock() const;
         /** Returns true if the player or their vehicle has a watch */
@@ -595,6 +593,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int ranged_per_mod() const;
         /** Returns the throwing attack dexterity mod */
         int throw_dex_mod(bool return_stat_effect = true) const;
+        int aim_per_time( item *gun, int predicted_recoil ) const;
         int aim_per_time( item *gun ) const;
 
         // Mental skills and stats
@@ -1088,7 +1087,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int movecounter;
         std::array<int, num_bp> temp_cur, frostbite_timer, temp_conv;
         void temp_equalizer(body_part bp1, body_part bp2); // Equalizes heat between body parts
-        bool pda_cached;
 
         // Drench cache
         enum water_tolerance {
