@@ -5118,30 +5118,33 @@ int iuse::oxytorch(player *p, item *it, bool, const tripoint& )
         return 0;
     }
 
-    int dirx, diry;
     if (!(p->has_amount("goggles_welding", 1) || p->is_wearing("goggles_welding") ||
           p->is_wearing("rm13_armor_on") || p->has_bionic("bio_sunglasses"))) {
         add_msg(m_info, _("You need welding goggles to do that."));
         return 0;
     }
-    if (!choose_adjacent(_("Cut up metal where?"), dirx, diry)) {
+
+    tripoint dirp = p->pos();
+    if( !choose_adjacent(_("Cut up metal where?"), dirp ) ) {
         return 0;
     }
 
-    if (dirx == p->posx() && diry == p->posy()) {
+    if( dirp == p->pos() ) {
         add_msg(m_info, _("Yuck.  Acetylene gas smells weird."));
         return 0;
     }
 
-    const ter_id ter = g->m.ter( dirx, diry );
+    const ter_id ter = g->m.ter( dirp );
+    const auto furn = g->m.furn( dirp );
     int moves;
 
-    if( g->m.furn(dirx, diry) == f_rack || ter == t_chainfence_posts ) {
+    if( furn == f_rack || ter == t_chainfence_posts ) {
         moves = 200;
     } else if( ter == t_window_enhanced || ter == t_window_enhanced_noglass ) {
         moves = 500;
     } else if( ter == t_chainfence_v || ter == t_chainfence_h || ter == t_chaingate_c ||
-               ter == t_chaingate_l  || ter == t_bars || ter == t_window_bars_alarm ) {
+               ter == t_chaingate_l  || ter == t_bars || ter == t_window_bars_alarm ||
+               ter == t_window_bars ) {
         moves = 1000;
     } else if( ter == t_door_metal_locked || ter == t_door_metal_c || ter == t_door_bar_c ||
                ter == t_door_bar_locked || ter == t_door_metal_pickable ) {
@@ -5160,7 +5163,7 @@ int iuse::oxytorch(player *p, item *it, bool, const tripoint& )
 
     // placing ter here makes resuming tasks work better
     p->assign_activity( ACT_OXYTORCH, moves, (int)ter, p->get_item_position( it ) );
-    p->activity.placement = tripoint( dirx, diry, 0 );
+    p->activity.placement = dirp;
     p->activity.values.push_back( charges );
 
     // charges will be consumed in oxytorch_do_turn, not here
@@ -6513,7 +6516,6 @@ int iuse::robotcontrol(player *p, item *it, bool, const tripoint& )
                 return 0;
             }
             return it->type->charges_to_use();
-            break;
         }
         case 3: { //make all friendly robots terminate (un)life with extreme prejudice
             p->moves -= 100;
@@ -6531,7 +6533,6 @@ int iuse::robotcontrol(player *p, item *it, bool, const tripoint& )
                 return 0;
             }
             return it->type->charges_to_use();
-            break;
         }
 
     }

@@ -2477,12 +2477,12 @@
         }
     },{
         "type" : "terrain",
-        "id" : "t_window_bars_alarm",
-        "name": "window with metal bars",
+        "id" : "t_window_bars",
+        "name": "window frame with metal bars",
         "symbol": "#",
         "color": "ltgray",
         "move_cost": 0,
-        "flags": ["TRANSPARENT", "NOITEM", "REDUCE_SCENT", "ALARMED", "CONNECT_TO_WALL"],
+        "flags": ["TRANSPARENT", "NOITEM", "CONNECT_TO_WALL"],
         "bash": {
             "str_min": 60, "str_max": 250,
             "sound": "metal screeching!",
@@ -2493,6 +2493,25 @@
                 { "item": "steel_chunk", "count": [1, 4] },
                 { "item": "scrap", "count": [1, 5] },
                 { "item": "glass_shard", "count": 3 }
+            ]
+        }
+    },{
+        "type" : "terrain",
+        "id" : "t_window_bars_alarm",
+        "name": "window with metal bars",
+        "symbol": "#",
+        "color": "ltgray",
+        "move_cost": 0,
+        "flags": ["TRANSPARENT", "NOITEM", "REDUCE_SCENT", "ALARMED", "CONNECT_TO_WALL"],
+        "bash": {
+            "str_min": 3, "str_max": 6,
+            "sound": "glass breaking!",
+            "sound_fail": "whack!",
+            "sound_vol": 16,
+            "sound_fail_vol": 10,
+            "ter_set": "t_window_bars",
+            "items": [
+                { "item": "glass_shard", "count": 5 }
             ]
         }
     },{
@@ -4286,6 +4305,13 @@
                 { "item": "2x4", "count": [1, 4] },
                 { "item": "splinter", "count": [2, 4] }
             ]
+        },
+        "deconstruct": {
+            "ter_set": "t_dirtfloor",
+            "items": [
+                { "item": "rope_30", "count": 1 },
+                { "item": "2x4", "count": 8 }
+            ]
         }
     },{
         "type" : "terrain",
@@ -4305,6 +4331,13 @@
                 { "item": "rope_6", "count": [3, 4] },
                 { "item": "2x4", "count": [1, 4] },
                 { "item": "splinter", "count": [2, 4] }
+            ]
+        },
+        "deconstruct": {
+            "ter_set": "t_dirtfloor",
+            "items": [
+                { "item": "rope_30", "count": 1 },
+                { "item": "2x4", "count": 8 }
             ]
         }
     },{
