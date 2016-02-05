@@ -133,8 +133,6 @@ const efftype_id effect_visuals( "visuals" );
 const efftype_id effect_weed_high( "weed_high" );
 const efftype_id effect_winded( "winded" );
 
-static bool is_firearm(const item &it);
-
 void remove_double_ammo_mod( item &it, player &p )
 {
     if( !it.item_tags.count( "DOUBLE_AMMO" ) || it.item_tags.count( "DOUBLE_REACTOR" )) {
@@ -172,22 +170,6 @@ void remove_double_plut_mod( item &it, player &p )
         it.charges = 0;
         p.i_add_or_drop( cells, 1 );
     }
-}
-
-void remove_recharge_mod( item &it, player &p )
-{
-    if( !it.item_tags.count( "RECHARGE" ) ) {
-        return;
-    }
-    p.add_msg_if_player( _( "You remove the rechargeable powerpack from your %s!" ),
-                         it.tname().c_str() );
-    item mod( "rechargeable_battery", calendar::turn );
-    mod.charges = it.charges;
-    it.charges = 0;
-    p.i_add_or_drop( mod, 1 );
-    it.item_tags.erase( "RECHARGE" );
-    it.item_tags.erase( "NO_UNLOAD" );
-    it.item_tags.erase( "NO_RELOAD" );
 }
 
 void remove_atomic_mod( item &it, player &p )
@@ -2090,11 +2072,6 @@ int iuse::catfood(player *p, item *it, bool, const tripoint& )
     return petfood(p, it, false);
 }
 
-static bool is_firearm(const item &it)
-{
-    return it.is_gun() && !it.has_flag("PRIMITIVE_RANGED_WEAPON");
-}
-
 int iuse::sew_advanced(player *p, item *it, bool, const tripoint& )
 {
     if( p->is_npc() ) {
@@ -2130,7 +2107,7 @@ int iuse::sew_advanced(player *p, item *it, bool, const tripoint& )
         p->add_msg_if_player(m_info, _("You can only tailor your clothes!"));
         return 0;
     }
-    if (is_firearm(*mod)){
+    if (mod->is_firearm()){
         p->add_msg_if_player(m_info, _("You can't use a tailor's kit on a firearm!"));
         return 0;
     }
@@ -2321,7 +2298,6 @@ int iuse::sew_advanced(player *p, item *it, bool, const tripoint& )
 void remove_battery_mods( item &modded, player &p )
 {
     remove_atomic_mod( modded, p );
-    remove_recharge_mod( modded, p );
     remove_ups_mod( modded, p );
     remove_double_ammo_mod( modded, p );
     remove_double_plut_mod( modded, p );
@@ -3799,6 +3775,10 @@ int iuse::set_trap(player *p, item *it, bool, const tripoint& )
         message << _("You place the funnel, waiting to collect rain.");
         type = tr_funnel;
         practice = 0;
+    } else if (it->type->id == "metal_funnel") {
+        message << _("You place the metal funnel, waiting to collect rain.");
+        type = tr_metal_funnel;
+        practice = 0;
     } else if (it->type->id == "makeshift_funnel") {
         message << _("You place the makeshift funnel, waiting to collect rain.");
         type = tr_makeshift_funnel;
@@ -3899,8 +3879,8 @@ int iuse::set_trap(player *p, item *it, bool, const tripoint& )
     }
 
     if( buried ) {
-        if( !p->has_items_with_quality( "DIG", 2, 1 ) ) {
-            p->add_msg_if_player( m_info, _( "You need a shovel." ) );
+        if( !p->has_items_with_quality( "DIG", 1, 1 ) ) {
+            p->add_msg_if_player( m_info, _( "You need a digging tool." ));
             return 0;
         } else if( !g->m.has_flag( "DIGGABLE", posx, posy ) ) {
             p->add_msg_if_player( m_info, _( "You can't dig in that %s." ),
@@ -6278,7 +6258,7 @@ int iuse::gun_repair(player *p, item *it, bool, const tripoint& )
         p->add_msg_if_player(m_info, _("You do not have that item!"));
         return 0;
     }
-    if (!is_firearm(*fix)) {
+    if (!fix->is_firearm()) {
         p->add_msg_if_player(m_info, _("That isn't a firearm!"));
         return 0;
     }
@@ -6335,7 +6315,7 @@ int iuse::misc_repair(player *p, item *it, bool, const tripoint& )
         return 0;
     }
     int inventory_index = g->inv_for_filter( _("Select the item to repair."), []( const item & itm ) {
-        return ( !is_firearm(itm) ) && (itm.made_of("wood") || itm.made_of("paper") ||
+        return ( !itm.is_firearm() ) && (itm.made_of("wood") || itm.made_of("paper") ||
                                  itm.made_of("bone") || itm.made_of("chitin") ) ;
     } );
     item *fix = &( p->i_at(inventory_index ) );
@@ -6343,7 +6323,7 @@ int iuse::misc_repair(player *p, item *it, bool, const tripoint& )
         p->add_msg_if_player(m_info, _("You do not have that item!"));
         return 0;
     }
-    if ( is_firearm(*fix) ) {
+    if ( fix->is_firearm() ) {
         p->add_msg_if_player(m_info, _("That requires gunsmithing tools."));
         return 0;
     }
@@ -7569,7 +7549,7 @@ int iuse::radiocaron(player *p, item *it, bool t, const tripoint &pos)
         return 0;
     }
 
-    int choice = menu(true, _("What do with activated RC car:"), _("Turn off"),
+    int choice = menu(true, _("What to do with activated RC car?"), _("Turn off"),
                       _("Cancel"), NULL);
 
     if (choice == 2) {
@@ -7638,12 +7618,12 @@ int iuse::radiocontrol(player *p, item *it, bool t, const tripoint& )
     const char *car_action = NULL;
 
     if (!it->active) {
-        car_action = _("Take control of RC car.");
+        car_action = _("Take control of RC car");
     } else {
-        car_action = _("Stop controlling RC car.");
+        car_action = _("Stop controlling RC car");
     }
 
-    choice = menu(true, _("What do with radio control:"), _("Nothing"), car_action,
+    choice = menu(true, _("What to do with radio control?"), _("Nothing"), car_action,
                   _("Press red button"), _("Press blue button"), _("Press green button"), NULL);
 
     if (choice == 1) {

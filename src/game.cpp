@@ -2553,7 +2553,7 @@ bool game::handle_action()
         case ACTION_MOVE_N:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(0, -1);
             } else if (veh_ctrl) {
                 pldrive(0, -1);
@@ -2565,7 +2565,7 @@ bool game::handle_action()
         case ACTION_MOVE_NE:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(1, -1);
             } else if (veh_ctrl) {
                 pldrive(1, -1);
@@ -2577,7 +2577,7 @@ bool game::handle_action()
         case ACTION_MOVE_E:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(1, 0);
             } else if (veh_ctrl) {
                 pldrive(1, 0);
@@ -2589,7 +2589,7 @@ bool game::handle_action()
         case ACTION_MOVE_SE:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(1, 1);
             } else if (veh_ctrl) {
                 pldrive(1, 1);
@@ -2601,7 +2601,7 @@ bool game::handle_action()
         case ACTION_MOVE_S:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(0, 1);
             } else if (veh_ctrl) {
                 pldrive(0, 1);
@@ -2613,7 +2613,7 @@ bool game::handle_action()
         case ACTION_MOVE_SW:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(-1, 1);
             } else if (veh_ctrl) {
                 pldrive(-1, 1);
@@ -2625,7 +2625,7 @@ bool game::handle_action()
         case ACTION_MOVE_W:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(-1, 0);
             } else if (veh_ctrl) {
                 pldrive(-1, 0);
@@ -2637,7 +2637,7 @@ bool game::handle_action()
         case ACTION_MOVE_NW:
             moveCount++;
 
-            if( u.get_value( "remote_controlling" ) != "" ) {
+            if( ( u.get_value( "remote_controlling" ) != "" ) && ( ( u.has_active_item("radiocontrol") ) || ( u.has_active_bionic("bio_remote") ) ) ) {
                 rcdrive(-1, -1);
             } else if (veh_ctrl) {
                 pldrive(-1, -1);
@@ -6514,6 +6514,7 @@ void game::shrapnel( const tripoint &p, int power, int count, int radius )
     fake_npc.setpos( p );
     projectile proj;
     proj.speed = 100;
+    proj.range = radius;
     proj.proj_effects.insert( "DRAW_AS_LINE" );
     proj.proj_effects.insert( "NULL_SOURCE" );
     for( int i = 0; i < count; i++ ) {
@@ -11001,7 +11002,8 @@ void game::plfire( bool burst, const tripoint &default_target )
         }
 
         if( gun.has_flag("RELOAD_AND_SHOOT") && gun.ammo_remaining() == 0 ) {
-            if( !gun.reload( u, gun.pick_reload_ammo( u, true ) ) ) {
+            item_location ammo = gun.pick_reload_ammo( u, true );
+            if( !ammo.get_item() || !gun.reload( u, std::move( ammo ) ) ) {
                 return;
             }
 
@@ -11032,7 +11034,7 @@ void game::plfire( bool burst, const tripoint &default_target )
 
             if( !( u.has_charges( "UPS_off", ups_drain ) ||
                    u.has_charges( "adv_UPS_off", adv_ups_drain ) ||
-                   (u.has_bionic( "bio_ups" ) && u.power_level >= bio_power_drain ) ) ) {
+                   (u.has_active_bionic( "bio_ups" ) && u.power_level >= bio_power_drain ) ) ) {
                 add_msg( m_info,
                          _("You need a UPS with at least %d charges or an advanced UPS with at least %d charges to fire that!"),
                          ups_drain, adv_ups_drain );
@@ -11079,14 +11081,14 @@ void game::plfire( bool burst, const tripoint &default_target )
     }
     draw_ter(); // Recenter our view
 
-    if( gun.get_gun_mode() == "MODE_BURST" ) {
+    if( gun.get_gun_mode() == "MODE_BURST" || ( u.has_trait( "TRIGGERHAPPY" ) && one_in( 30 ) && gun.burst_size() >= 2 ) ) {
         burst = true;
     }
 
     if( reach_attack ) {
         u.reach_attack( p );
     } else {
-        u.fire_gun( p, burst, gun );
+        u.fire_gun( p, burst ? gun.burst_size() : 1, gun );
     }
 
     reenter_fullscreen();
@@ -11609,7 +11611,7 @@ void game::unload( item &it )
     }
 
     if( target->has_flag( "NO_UNLOAD" ) ) {
-        if( target->has_flag( "RECHARGE" ) ) {
+        if( target->has_flag( "RECHARGE" ) || target->has_flag( "USE_UPS" )) {
             add_msg( m_info, _( "You can't unload a rechargeable %s!" ), target->tname().c_str() );
         } else {
             add_msg( m_info, _( "You can't unload a %s!" ), target->tname().c_str() );

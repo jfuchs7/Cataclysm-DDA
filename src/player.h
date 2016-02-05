@@ -38,6 +38,29 @@ using start_location_id = string_id<start_location>;
 struct it_comest;
 struct w_point;
 
+// This tries to represent both rating and
+// player's decision to respect said rating
+enum edible_rating {
+    // Edible or we pretend it is
+    EDIBLE,
+    // Not food at all
+    INEDIBLE,
+    // Not food because mutated mouth/system
+    INEDIBLE_MUTATION,
+    // You can eat it, but it will hurt morale
+    ALLERGY,
+    // Smaller allergy penalty
+    ALLERGY_WEAK,
+    // Cannibalism (unless psycho/cannibal)
+    CANNIBALISM,
+    // Rotten or not rotten enough (for saprophages)
+    ROTTEN,
+    // We can eat this, but we'll overeat
+    TOO_FULL,
+    // Some weird stuff that requires a tool we don't have
+    NO_TOOL
+};
+
 struct special_attack {
     std::string text;
     int bash;
@@ -470,15 +493,21 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * @param force_technique special technique to use in attack.
          */
         void melee_attack(Creature &t, bool allow_special, const matec_id &force_technique) override;
-        /** Returns the player's dispersion modifier based on skill. **/
-        int skill_dispersion( item *weapon, bool random ) const;
         /** Returns a weapon's modified dispersion value */
         double get_weapon_dispersion( item *weapon, bool random ) const;
         /** Returns true if a gun misfires, jams, or has other problems, else returns false */
         bool handle_gun_damage( const itype &firing, const std::set<std::string> &curammo_effects );
-        /** Handles gun firing effects and functions */
-        void fire_gun( const tripoint &target, bool burst );
-        void fire_gun( const tripoint &target, bool burst, item& gun );
+
+        /**
+         *  Fires a gun or axuiliary gunmod (ignoring any current mode)
+         *  @param target where the first shot is aimed at (may vary for later shots)
+         *  @param shots maximum number of shots to fire (less may be fired in some circumstances)
+         *  @param gun item to fire (which does not necessary have to be in the players possession)
+         *  @return number of shots actually fired
+         */
+        int fire_gun( const tripoint &target, int shots = 1 );
+        int fire_gun( const tripoint &target, int shots, item& gun );
+
         /** Handles reach melee attacks */
         void reach_attack( const tripoint &target );
 
@@ -589,14 +618,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int throw_range(int pos) const;
         /** Execute a throw */
         dealt_projectile_attack throw_item( const tripoint &target, const item &thrown );
-        /** Returns the ranged attack dexterity mod */
-        int ranged_dex_mod() const;
-        /** Returns the ranged attack perception mod */
-        int ranged_per_mod() const;
         /** Returns the throwing attack dexterity mod */
         int throw_dex_mod(bool return_stat_effect = true) const;
-        int aim_per_time( item *gun, int predicted_recoil ) const;
-        int aim_per_time( item *gun ) const;
 
         // Mental skills and stats
         /** Returns the player's reading speed */
@@ -684,12 +707,23 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** Used for eating a particular item that doesn't need to be in inventory.
          *  Returns true if the item is to be removed (doesn't remove). */
         bool consume_item( item &eat );
+
+        /** This block is to be moved to character.h */
+        bool is_allergic( const item &food ) const;
+        /** Returns allergy type or MORALE_NULL if not allergic for this player */
+        morale_type allergy_type( const item &food ) const;
         /** Used for eating entered comestible, returns true if comestible is successfully eaten */
-        bool eat(item *eat, const it_comest *comest);
+        bool eat( item &food, bool force = false );
+        edible_rating can_eat( const item &food,
+            bool interactive = false, bool force = false ) const;
+
+        /** Gets player's minimum hunger and thirst */
+        int stomach_capacity() const;
+
         /** Handles the nutrition value for a comestible **/
-        int nutrition_for(const it_comest *comest);
+        int nutrition_for(const it_comest *comest) const;
         /** Handles the effects of consuming an item */
-        void consume_effects(item *eaten, const it_comest *comest, bool rotten = false);
+        void consume_effects( item &eaten, bool rotten = false );
         /** Handles rooting effects */
         void rooted_message() const;
         void rooted();
@@ -867,6 +901,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         std::string weapname() const;
 
         virtual float power_rating() const override;
+        virtual float speed_rating() const override;
 
         /**
          * All items that have the given flag (@ref item::has_flag).
@@ -1076,7 +1111,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool last_climate_control_ret;
         std::string move_mode;
         int power_level, max_power_level;
-        int thirst, fatigue;
+        int thirst;
+        int fatigue;
         int tank_plut, reactor_plut, slow_rad;
         int oxygen;
         int stamina;

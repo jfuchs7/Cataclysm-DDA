@@ -976,6 +976,7 @@ void salvage_actor::load( JsonObject &obj )
         material_whitelist.push_back("plastic");
         material_whitelist.push_back("wood");
         material_whitelist.push_back("wool");
+        material_whitelist.push_back("neoprene");
     }
 }
 
@@ -1949,7 +1950,8 @@ const itype_id &material_component( const std::string &material_id )
         { "leather", "leather" },
         { "fur", "fur" },
         { "nomex", "nomex" },
-        { "wool", "felt_patch" }
+        { "wool", "felt_patch" },
+        { "neoprene", "neoprene" }
     };
 
     static const itype_id null_material = "";
@@ -2308,7 +2310,8 @@ long heal_actor::use( player *p, item *it, bool, const tripoint &pos ) const
         cost /= (p->skillLevel( skill_firstaid ) + 1);
     }
 
-    if( long_action && &patient == p ) {
+    // NPCs can use first aid now, but they can't perform long actions
+    if( long_action && &patient == p && !p->is_npc() ) {
         // Assign first aid long action.
         ///\EFFECT_FIRSTAID speeds up firstaid activity
         p->assign_activity( ACT_FIRSTAID, cost, 0, p->get_item_position( it ), it->tname() );

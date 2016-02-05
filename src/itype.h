@@ -361,11 +361,12 @@ struct islot_magazine {
      */
     int capacity;
     /**
-     * Default amount of ammo contained by a magazine
+     * Default amount of ammo contained by a magazine (often set for ammo belts)
      */
     int count;
     /**
-     * Percentage chance each round is fed without causing a jam
+     * How reliable this this magazine on a range of 0 to 10?
+     * @see doc/GAME_BALANCE.md
      */
     int reliability;
     /**
@@ -550,6 +551,8 @@ public:
     int      stack_size = 0; // How many things make up the above-defined volume (eg. 100 aspirin = 1 volume)
     unsigned weight     = 0; // Weight in grams. Assumes positive weight. No helium, guys!
 
+    unsigned integral_volume; // Space consumed when integrated as part of another item (defaults to volume)
+
     int melee_dam = 0; // Bonus for melee damage; may be a penalty
     int melee_cut = 0; // Cutting damage in melee
     int m_to_hit  = 0;  // To-hit bonus for melee combat; -5 to 5 is reasonable
@@ -566,6 +569,9 @@ public:
 
     /** Volume above which the magazine starts to protrude from the item and add extra volume */
     int magazine_well;
+
+    /** Default magazine type used to reload this item */
+    itype_id magazine_default;
 
     bool explode_in_fire() const
     {

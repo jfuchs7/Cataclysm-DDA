@@ -398,6 +398,7 @@ bool mattack::acid(monster *z)
     projectile proj;
     proj.speed = 10;
     proj.impact.add_damage( DT_ACID, 5 ); // Mostly just for momentum
+    proj.range = 10;
     auto dealt = z->projectile_attack( proj, target->pos(), 5400 );
     const tripoint &hitp = dealt.end_point;
     const Creature *hit_critter = dealt.hit_critter;
@@ -499,6 +500,7 @@ bool mattack::acid_accurate(monster *z)
 
     projectile proj;
     proj.speed = 10;
+    proj.range = 12;
     proj.proj_effects.insert( "BLINDS_EYES" );
     proj.impact.add_damage( DT_ACID, rng( 5, 10 ) );
     z->projectile_attack( proj, target->pos(), rng( 150, 1200 ) );
@@ -1360,6 +1362,7 @@ bool mattack::spit_sap(monster *z)
 
     projectile proj;
     proj.speed = 10;
+    proj.range = 12;
     proj.proj_effects.insert( "APPLY_SAP" );
     proj.impact.add_damage( DT_ACID, rng( 5, 10 ) );
     z->projectile_attack( proj, target->pos(), 150 );
@@ -2787,7 +2790,7 @@ bool mattack::smg(monster *z)
     tmp.weapon.set_curammo( ammo_type );
     tmp.weapon.charges = std::max(z->ammo[ammo_type], 10);
     z->ammo[ammo_type] -= tmp.weapon.charges;
-    tmp.fire_gun( target->pos(), true );
+    tmp.fire_gun( target->pos(), tmp.weapon.burst_size() );
     z->ammo[ammo_type] += tmp.weapon.charges;
     if (target == &g->u) {
         z->add_effect( effect_targeted, 3);
@@ -2852,7 +2855,7 @@ bool mattack::laser(monster *z)
     tmp.weapon = item("cerberus_laser", 0);
     tmp.weapon.set_curammo( "laser_capacitor" );
     tmp.weapon.charges = 100;
-    tmp.fire_gun( target->pos(), true );
+    tmp.fire_gun( target->pos(), tmp.weapon.burst_size() );
     if (target == &g->u) {
         z->add_effect( effect_targeted, 3);
     }
@@ -2934,7 +2937,7 @@ void mattack::rifle( monster *z, Creature *target )
     tmp.weapon.set_curammo( ammo_type );
     tmp.weapon.charges = std::max(z->ammo[ammo_type], 30);
     z->ammo[ammo_type] -= tmp.weapon.charges;
-    tmp.fire_gun( target->pos(), true );
+    tmp.fire_gun( target->pos(), tmp.weapon.burst_size() );
     z->ammo[ammo_type] += tmp.weapon.charges;
     if (target == &g->u) {
         z->add_effect( effect_targeted, 3);
@@ -2983,7 +2986,7 @@ void mattack::frag( monster *z, Creature *target ) // This is for the bots, not 
     tmp.weapon.set_curammo( ammo_type );
     tmp.weapon.charges = std::max(z->ammo[ammo_type], 30);
     z->ammo[ammo_type] -= tmp.weapon.charges;
-    tmp.fire_gun( target->pos(), true );
+    tmp.fire_gun( target->pos(), tmp.weapon.burst_size() );
     z->ammo[ammo_type] += tmp.weapon.charges;
     if (target == &g->u) {
         z->add_effect( effect_targeted, 3);
@@ -3056,7 +3059,7 @@ bool mattack::bmg_tur(monster *z)
     tmp.weapon.set_curammo( ammo_type );
     tmp.weapon.charges = std::max(z->ammo[ammo_type], 30);
     z->ammo[ammo_type] -= tmp.weapon.charges;
-    tmp.fire_gun( target->pos(), false );
+    tmp.fire_gun( target->pos() );
     z->ammo[ammo_type] += tmp.weapon.charges;
     if (target == &g->u) {
         z->add_effect( effect_targeted, 3);
@@ -3123,7 +3126,7 @@ void mattack::tankgun( monster *z, Creature *target )
     tmp.weapon.set_curammo( ammo_type );
     tmp.weapon.charges = std::max(z->ammo[ammo_type], 5);
     z->ammo[ammo_type] -= tmp.weapon.charges;
-    tmp.fire_gun( aim_point, false );
+    tmp.fire_gun( aim_point );
     z->ammo[ammo_type] += tmp.weapon.charges;
 }
 

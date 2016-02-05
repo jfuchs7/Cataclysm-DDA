@@ -4940,8 +4940,9 @@ bool map::sees_some_items( const tripoint &p, const Creature &who ) const
 
 bool map::could_see_items( const tripoint &p, const Creature &who ) const
 {
-    const bool container = has_flag_ter_or_furn( "CONTAINER", p );
-    const bool sealed = has_flag_ter_or_furn( "SEALED", p );
+    static const std::string container_string( "CONTAINER" );
+    const bool container = has_flag_ter_or_furn( container_string, p );
+    const bool sealed = has_flag_ter_or_furn( TFLAG_SEALED, p );
     if( sealed && container ) {
         // never see inside of sealed containers
         return false;
@@ -5939,6 +5940,12 @@ void map::drawsq( WINDOW* w, player &u, const tripoint &p, const bool invert_arg
                          invert_arg, view_center,
                          low_light, bright_light, false );
     }
+}
+
+// a check to see if the lower floor needs to be rendered in tiles
+bool map::need_draw_lower_floor( const tripoint &p )
+{
+    return !( !zlevels || p.z <= -OVERMAP_DEPTH || !ter_at( p ).has_flag( TFLAG_NO_FLOOR ) );
 }
 
 bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &curr_maptile,
@@ -7016,6 +7023,10 @@ void map::spawn_monsters_submap_group( const tripoint &gp, mongroup &group, bool
         }
     }
 
+    // Find horde's target submap
+    tripoint horde_target( group.target.x - abs_sub.x,
+        group.target.y - abs_sub.y, abs_sub.z );
+    overmapbuffer::sm_to_ms( horde_target );
     for( auto &tmp : group.monsters ) {
         for( int tries = 0; tries < 10 && !locations.empty(); tries++ ) {
             const tripoint p = random_entry_removed( locations );
@@ -7023,6 +7034,16 @@ void map::spawn_monsters_submap_group( const tripoint &gp, mongroup &group, bool
                 continue; // target can not contain the monster
             }
             tmp.spawn( p );
+            if( group.horde ) {
+                // Give monster a random point near horde's expected destination
+                const tripoint rand_dest = horde_target +
+                    point( rng( 0, SEEX ), rng( 0, SEEY ) );
+                const int turns = rl_dist( p, rand_dest ) + group.interest;
+                tmp.wander_to( rand_dest, turns );
+                add_msg( m_debug, "%s targetting %d,%d,%d", tmp.disp_name().c_str(),
+                         tmp.wander_pos.x, tmp.wander_pos.y, tmp.wander_pos.z );
+            }
+
             g->add_zombie( tmp );
             break;
         }
