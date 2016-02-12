@@ -2,7 +2,6 @@
 #define PLAYER_H
 
 #include "character.h"
-#include "crafting.h"
 #include "craft_command.h"
 #include "item.h"
 #include "player_activity.h"
@@ -216,6 +215,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void reset_stats() override;
         /** Resets movement points and applies other non-idempotent changes */
         void process_turn() override;
+        /** Drop items randomly if insufficient inventory space except during pending activity */
+        virtual void drop_inventory_overflow() override;
         /** Calculates the various speed bonuses we will get from mutations, etc. */
         void recalc_speed_bonus();
         /** Called after every action, invalidates player caches */
@@ -790,10 +791,16 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** As above two, but with position equal to current position */
         bool invoke_item( item* );
         bool invoke_item( item*, const std::string& );
-        /** Consumes charges from a tool or does nothing with a non-tool. Returns true if it destroys the item. */
-        bool consume_charges(item *used, long charges_used);
+
+        /** Consume charges of a tool or comestible item, potentially destroying it in the process
+         *  @qty number of charges to consume which must be non-zero
+         *  @return true if item was destroyed */
+        bool consume_charges( item& used, long qty );
+
         /** Removes selected gunmod from the entered weapon */
         void remove_gunmod(item *weapon, unsigned id);
+        /** Starts activity to install gunmod having warned user about any risk of failure or irremovable mods s*/
+        void gunmod_add( item& gun, item& mod );
         /** Attempts to install bionics, returns false if the player cancels prior to installation */
         bool install_bionics(const itype &type, int skill_level = -1);
         /** Handles reading effects and returns true if activity started */
@@ -891,11 +898,10 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
 
         int net_morale(morale_point effect) const;
         int morale_level() const; // Modified by traits, &c
-        void add_morale(morale_type type, int bonus, int max_bonus = 0,
-                        int duration = 60, int decay_start = 30,
-                        bool cap_existing = false, const itype *item_type = NULL);
+        void add_morale( morale_type type, int bonus, int max_bonus = 0, int duration = 60,
+                        int decay_start = 30, bool capped = false, const itype *item_type = nullptr );
         int has_morale( morale_type type ) const;
-        void rem_morale(morale_type type, const itype *item_type = NULL);
+        void rem_morale( morale_type type, const itype *item_type = nullptr );
 
         /** Get the formatted name of the currently wielded item (if any) */
         std::string weapname() const;

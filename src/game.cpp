@@ -1567,9 +1567,7 @@ void game::catch_a_monster(std::vector<monster*> &catchables, const tripoint &po
 {
     int index = rng(1, catchables.size()) - 1; //get a random monster from the vector
     //spawn the corpse, rotten by a part of the duration
-    item fish;
-    fish.make_corpse( catchables[index]->type->id, calendar::turn + int(rng(0, catch_duration)) );
-    m.add_item_or_charges( pos, fish );
+    m.add_item_or_charges( pos, item::make_corpse( catchables[index]->type->id, calendar::turn + int( rng( 0, catch_duration ) ) ) );
     u.add_msg_if_player(m_good, _("You caught a %s."), catchables[index]->type->nname().c_str());
     //quietly kill the catched
     catchables[index]->no_corpse_quiet = true;
@@ -4041,7 +4039,7 @@ void game::debug()
             add_msg( m_info, _( "Recipe debug." ) );
             add_msg( _( "Your eyes blink rapidly as knowledge floods your brain." ) );
             for( auto cur_recipe : recipe_dict ) {
-                if( !( u.learned_recipes.find( cur_recipe->ident ) != u.learned_recipes.end() ) )  {
+                if( !( u.learned_recipes.find( cur_recipe->ident() ) != u.learned_recipes.end() ) )  {
                     u.learn_recipe( ( recipe * )cur_recipe, true );
                 }
             }
@@ -11391,19 +11389,17 @@ void game::eat(int pos)
         return it.made_of( SOLID ) && (it.is_food( &u ) || it.is_food_container( &u ) );
     }, _( "Consume item:" ), 1 );
 
-    const int inv_pos = item_loc.get_inventory_position();
-    if( inv_pos != INT_MIN ) {
-        u.consume( inv_pos );
-        return;
-    }
-
     item *it = item_loc.get_item();
-    if( it == nullptr ) {
-        add_msg(_("Never mind."));
+    if( !it ) {
+        add_msg( _( "Never mind." ) );
         return;
     }
 
-    if( u.consume_item( *it ) ) {
+    pos = u.get_item_position( it );
+    if( pos != INT_MIN ) {
+        u.consume( pos );
+
+    } else if( u.consume_item( *it ) ) {
         if( it->is_food_container() ) {
             it->contents.erase( it->contents.begin() );
             add_msg( _("You leave the empty %s."), it->tname().c_str() );
@@ -11576,12 +11572,6 @@ void game::unload( item &it )
 
     if( it.is_gun() ) {
         for( auto &e : it.contents ) {
-            // @todo deprecate handling of spare magazine
-            if( e.typeId() == "spare_mag" && e.charges > 0 ) {
-                msgs.emplace_back( e.tname() );
-                opts.emplace_back( &e );
-            }
-
             if( e.is_auxiliary_gunmod() && !e.has_flag( "NO_UNLOAD" ) &&
                 ( e.magazine_current() || e.ammo_remaining() > 0 ) ) {
                 msgs.emplace_back( e.tname() );
@@ -11591,18 +11581,6 @@ void game::unload( item &it )
     }
 
     item *target = opts.size() > 1 ? opts[ ( uimenu( false, _("Unload what?"), msgs ) ) - 1 ] : &it;
-
-    // @todo deprecate handling of spare magazine as special case
-    if( target->typeId() == "spare_mag" && target->charges > 0 ) {
-        item ammo( it.ammo_current(), calendar::turn );
-        ammo.charges = it.charges;
-        if( add_or_drop_with_msg( u, ammo ) ) {
-            target->charges = 0;
-            add_msg( _( "You unload your %s." ), target->tname().c_str() );
-            u.moves -= it.reload_time( u ) / 2;
-        }
-        return;
-    }
 
     // Next check for any reasons why the item cannot be unloaded
     if( target->ammo_type() == "NULL" || target->ammo_capacity() <= 0 ) {

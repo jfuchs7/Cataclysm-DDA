@@ -17,6 +17,8 @@
 #include "rng.h"
 #include "translations.h"
 
+#include <algorithm>
+
 const mtype_id mon_generator( "mon_generator" );
 const mtype_id mon_zombie_dog( "mon_zombie_dog" );
 const mtype_id mon_fungaloid( "mon_fungaloid" );
@@ -477,7 +479,6 @@ void mtype::load( JsonObject &jo )
     optional( jo, was_loaded, "melee_skill", melee_skill, 0 );
     optional( jo, was_loaded, "melee_dice", melee_dice, 0 );
     optional( jo, was_loaded, "melee_dice_sides", melee_sides, 0 );
-    optional( jo, was_loaded, "melee_cut", melee_cut, 0 );
     optional( jo, was_loaded, "dodge", sk_dodge, 0 );
     optional( jo, was_loaded, "armor_bash", armor_bash, 0 );
     optional( jo, was_loaded, "armor_cut", armor_cut, 0 );
@@ -491,6 +492,19 @@ void mtype::load( JsonObject &jo )
     optional( jo, was_loaded, "vision_night", vision_night, 1 );
     optional( jo, was_loaded, "armor_stab", armor_stab, 0.8f * armor_cut );
     optional( jo, was_loaded, "attack_effs", atk_effs, mon_attack_effect_reader{} );
+
+    // TODO: make this work with `was_loaded`
+    if( jo.has_array( "melee_damage" ) ) {
+        JsonArray arr = jo.get_array( "melee_damage" );
+        melee_damage = load_damage_instance( arr );
+    } else if( jo.has_object( "melee_damage" ) ) {
+        melee_damage = load_damage_instance( jo );
+    }
+
+    if( jo.has_int( "melee_cut" ) ) {
+        int bonus_cut = jo.get_int( "melee_cut" );
+        melee_damage.add_damage( DT_CUT, bonus_cut );
+    }
 
     if( jo.has_member( "death_drops" ) ) {
         JsonIn &stream = *jo.get_raw( "death_drops" );

@@ -335,6 +335,7 @@ void map::destroy_vehicle (vehicle *veh)
             if( veh->tracking_on ) {
                 overmap_buffer.remove_vehicle( veh );
             }
+            dirty_vehicle_list.erase(veh);
             delete veh;
             return;
         }
@@ -802,7 +803,7 @@ void map::move_vehicle( vehicle &veh, const tripoint &dp, const tileray &facing 
 
     // Now we're gonna handle traps we're standing on (if we're still moving).
     if( !vertical && can_move ) {
-        const auto &wheel_indices = veh.wheelcache;
+        const auto wheel_indices = veh.wheelcache; // Don't use a reference here, it causes a crash.
         for( auto &w : wheel_indices ) {
             const tripoint wheel_p = pt + veh.parts[w].precalc[0];
             if( one_in( 2 ) && displace_water( wheel_p ) ) {
@@ -2708,6 +2709,10 @@ int map::bash_rating( const int str, const tripoint &p, const bool allow_floor )
     if( !inbounds( p ) ) {
         DebugLog( D_WARNING, D_MAP ) << "Looking for out-of-bounds is_bashable at "
                                      << p.x << ", " << p.y << ", " << p.z;
+        return -1;
+    }
+
+    if( str <= 0 ) {
         return -1;
     }
 
@@ -5301,7 +5306,7 @@ static bool trigger_radio_item( item_stack &items, std::list<item>::iterator &n,
         // If that changes, this needs logic to handle the alternative.
         itype_id bomb_type = n->contents[0].type->id;
 
-        n->make(bomb_type);
+        n->convert( bomb_type );
         if( n->has_flag("RADIO_INVOKE_PROC") ) {
             n->process( nullptr, pos, true );
         }
@@ -6628,6 +6633,12 @@ void map::loadn( const int gridx, const int gridy, const bool update_vehicles ) 
         for( int gridz = -OVERMAP_DEPTH; gridz <= OVERMAP_HEIGHT; gridz++ ) {
             loadn( gridx, gridy, gridz, update_vehicles );
         }
+
+        // Note: we want it in a separate loop! It is a post-load cleanup
+        // Since we're adding roofs, we want it to go up (from lowest to highest)
+        for( int gridz = -OVERMAP_DEPTH; gridz <= OVERMAP_HEIGHT; gridz++ ) {
+            add_roofs( gridx, gridy, gridz );
+        }
     } else {
         loadn( gridx, gridy, abs_sub.z, update_vehicles );
     }
@@ -6789,7 +6800,7 @@ void map::remove_rotten_items( Container &items, const tripoint &pnt )
     }
 }
 
-void map::fill_funnels( const tripoint &p )
+void map::fill_funnels( const tripoint &p, int since_turn )
 {
     const auto &tr = tr_at( p );
     if( !tr.is_funnel() ) {
@@ -6808,8 +6819,7 @@ void map::fill_funnels( const tripoint &p )
         }
     }
     if( biggest_container != items.end() ) {
-
-        retroactively_fill_from_funnel( *biggest_container, tr, calendar::turn, getabs( p ) );
+        retroactively_fill_from_funnel( *biggest_container, tr, since_turn, calendar::turn, getabs( p ) );
     }
 }
 
@@ -6894,7 +6904,7 @@ void map::actualize( const int gridx, const int gridy, const int gridz )
             }
 
             if( do_funnels ) {
-                fill_funnels( pnt );
+                fill_funnels( pnt, tmpsub->turn_last_touched );
             }
 
             grow_plant( pnt );
@@ -6915,6 +6925,53 @@ void map::actualize( const int gridx, const int gridy, const int gridz )
 
     // the last time we touched the submap, is right now.
     tmpsub->turn_last_touched = calendar::turn;
+}
+
+void map::add_roofs( const int gridx, const int gridy, const int gridz )
+{
+    if( !zlevels ) {
+        // No roofs required!
+        // Why not? Because submaps below and above don't exist yet
+        return;
+    }
+
+    submap * const sub_here = get_submap_at_grid( gridx, gridy, gridz );
+    if( sub_here == nullptr ) {
+        debugmsg( "Tried to add roofs/floors on null submap on %d,%d,%d",
+                  gridx, gridy, gridz );
+        return;
+    }
+
+    bool check_roof = gridz > -OVERMAP_DEPTH;
+
+    submap * const sub_below = check_roof ? get_submap_at_grid( gridx, gridy, gridz - 1 ) : nullptr;
+
+    if( check_roof && sub_below == nullptr ) {
+        debugmsg( "Tried to add roofs to sm at %d,%d,%d, but sm below doesn't exist",
+                  gridx, gridy, gridz );
+        return;
+    }
+
+    for( int x = 0; x < SEEX; x++ ) {
+        for( int y = 0; y < SEEY; y++ ) {
+            const ter_id ter_here = sub_here->ter[x][y];
+            if( ter_here != t_open_air ) {
+                continue;
+            }
+
+            if( !check_roof ) {
+                // Make sure we don't have open air at lowest z-level
+                sub_here->ter[x][y] = t_rock_floor;
+                continue;
+            }
+
+            const ter_t &ter_below = sub_below->ter[x][y].obj();
+            if( !ter_below.roof.empty() ) {
+                // TODO: Make roof variable a ter_id to speed this up
+                sub_here->ter[x][y] = terfind( ter_below.roof );
+            }
+        }
+    }
 }
 
 void map::copy_grid( const tripoint &to, const tripoint &from )
@@ -7768,9 +7825,9 @@ void map::add_corpse( const tripoint &p )
     const bool isReviveSpecial = one_in( 10 );
 
     if( !isReviveSpecial ) {
-        body.make_corpse();
+        body = item::make_corpse();
     } else {
-        body.make_corpse( mon_zombie, calendar::turn );
+        body = item::make_corpse( mon_zombie );
         body.item_tags.insert( "REVIVE_SPECIAL" );
         body.active = true;
     }

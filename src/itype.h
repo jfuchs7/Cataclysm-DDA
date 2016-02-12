@@ -67,10 +67,6 @@ struct islot_container {
      * Contents do not spoil.
      */
     bool preserves = false;
-    /**
-     * Volume of the item does not include volume of the content.
-     */
-    bool rigid = false;
 };
 
 struct islot_armor {
@@ -230,8 +226,7 @@ struct common_firing_data : common_ranged_data {
      */
     int burst = 0;
     /**
-     * Clip size. Note that on some gunmods it means relative (in percent) of the
-     * guns main magazine.
+     * Clip size
      */
     int clip = 0;
     /**
@@ -289,11 +284,11 @@ struct islot_gun : common_firing_data {
     /**
     *Built in mods. string is id of mod. These mods will get the IRREMOVABLE flag set.
     */
-    std::vector<std::string> built_in_mods;
+    std::set<itype_id> built_in_mods;
     /**
     *Default mods, string is id of mod. These mods are removable but are default on the weapon.
     */
-    std::vector<std::string> default_mods;
+    std::set<itype_id> default_mods;
 };
 
 struct islot_gunmod : common_firing_data {
@@ -349,6 +344,10 @@ struct islot_gunmod : common_firing_data {
     *Allowing a mod to add UPS charge requirement to a gun.
     */
     int ups_charges = 0;
+    /**
+     * How many moves does this gunmod take to install?
+     */
+    int install_time = 0;
 };
 
 struct islot_magazine {
@@ -374,13 +373,9 @@ struct islot_magazine {
      */
     int reload_time;
     /**
-     * Volume increases proportional to contained ammo for non-rigid magazines
+     * For ammo belts one linkage (of given type) is dropped for each unit of ammo consumed
      */
-    bool rigid;
-    /**
-     * Alternative magazines (if any) for use with ammo conversion mods
-     */
-    std::map< ammotype, std::set<itype_id> > alternatives;
+     itype_id linkage = "NULL";
 };
 
 struct islot_ammo : common_ranged_data {
@@ -553,6 +548,8 @@ public:
 
     unsigned integral_volume; // Space consumed when integrated as part of another item (defaults to volume)
 
+    bool rigid = true; // If non-rigid volume (and if worn encumbrance) increases proportional to contents
+
     int melee_dam = 0; // Bonus for melee damage; may be a penalty
     int melee_cut = 0; // Cutting damage in melee
     int m_to_hit  = 0;  // To-hit bonus for melee combat; -5 to 5 is reasonable
@@ -564,14 +561,14 @@ public:
     nc_color color = c_white; // Color on the map (color.h)
     char sym = '#';       // Symbol on the ma
 
-    /** Magazine types (if any) that can be used to reload this item */
-    std::set<itype_id> magazines;
+    /** Magazine types (if any) for each ammo type that can be used to reload this item */
+    std::map< ammotype, std::set<itype_id> > magazines;
+
+    /** Default magazine for each ammo type that can be used to reload this item */
+    std::map< ammotype, itype_id > magazine_default;
 
     /** Volume above which the magazine starts to protrude from the item and add extra volume */
     int magazine_well;
-
-    /** Default magazine type used to reload this item */
-    itype_id magazine_default;
 
     bool explode_in_fire() const
     {
