@@ -747,6 +747,15 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * @param interactive controls whether informative messages are printed if item requirements not met
          */
         bool can_use( const item& it, bool interactive = true ) const;
+
+        /**
+         * Drop, wear, stash or otherwise try to dispose of an item consuming appropriate moves
+         * @param obj item to dispose of which must in the players possession
+         * @param prompt optional message to display in any menu
+         * @return whether the item was successfully disposed of
+         */
+        bool dispose_item( item& obj, const std::string& prompt = std::string() );
+
         /**
          * Calculate (but do not deduct) the number of moves required when handling (eg. storing, drawing etc.) an item
          * @param effects whether temporary player effects should be considered (eg. GRABBED, DOWNED)
@@ -896,12 +905,13 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool has_activity(const activity_type type) const;
         void cancel_activity();
 
-        int net_morale(morale_point effect) const;
-        int morale_level() const; // Modified by traits, &c
+        int get_morale_level() const; // Modified by traits, &c
+        void invalidate_morale_level();
         void add_morale( morale_type type, int bonus, int max_bonus = 0, int duration = 60,
                         int decay_start = 30, bool capped = false, const itype *item_type = nullptr );
         int has_morale( morale_type type ) const;
         void rem_morale( morale_type type, const itype *item_type = nullptr );
+        bool has_morale_to_read() const;
 
         /** Get the formatted name of the currently wielded item (if any) */
         std::string weapname() const;
@@ -969,13 +979,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         // Returns max required quality in player's items, INT_MIN if player has no such items
         int max_quality( const std::string &quality_id ) const;
 
-        bool has_item(int position);
-        /**
-         * Check whether a specific item is in the players possession.
-         * The item is compared by pointer.
-         * @param it A pointer to the item to be looked for.
-         */
-        bool has_item(const item *it) const;
         bool has_mission_item(int mission_id) const; // Has item with mission_id
         /**
          * Check whether the player has a gun that uses the given type of ammo.
@@ -998,7 +1001,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool crafting_allowed( const std::string & rec_name );
         bool crafting_allowed( const recipe & rec );
         float lighting_craft_speed_multiplier( const recipe & rec );
-        bool has_moral_to_craft();
+        bool has_morale_to_craft() const;
         bool can_make( const recipe * r, int batch_size = 1 ); // have components?
         bool making_would_work( const std::string & id_to_make, int batch_size );
         void craft();
@@ -1285,6 +1288,15 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void load(JsonObject &jsin);
 
     private:
+        // Mutability is required for lazy initialization
+        mutable int morale_level;
+        mutable bool morale_level_is_valid;
+
+        /** Returns current traits multiplier for morale */
+        morale_mult get_traits_mult() const;
+        /** Returns current effects multiplier for morale */
+        morale_mult get_effects_mult() const;
+
         // Items the player has identified.
         std::unordered_set<std::string> items_identified;
         /** Check if an area-of-effect technique has valid targets */

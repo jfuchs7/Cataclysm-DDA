@@ -203,6 +203,8 @@ player::player() : Character()
  last_batch = 0;
  lastconsumed = itype_id("null");
  next_expected_position = tripoint_min;
+ morale_level = 0;
+ morale_level_is_valid = false;
 
  empty_traits();
 
@@ -335,15 +337,15 @@ void player::reset_stats()
         }
     }
     // Morale
-    if (abs(morale_level()) >= 100) {
-        mod_str_bonus(int(morale_level() / 180));
-        int dex_mod = int(morale_level() / 200);
+    if( abs( get_morale_level() ) >= 100 ) {
+        mod_str_bonus( int( get_morale_level() / 180 ) );
+        int dex_mod = int( get_morale_level() / 200 );
         mod_dex_bonus(dex_mod);
         if (dex_mod < 0) {
             add_miss_reason(_("What's the point of fighting?"), -dex_mod);
         }
-        mod_per_bonus(int(morale_level() / 125));
-        mod_int_bonus(int(morale_level() / 100));
+        mod_per_bonus( int( get_morale_level() / 125 ) );
+        mod_int_bonus( int( get_morale_level() / 100 ) );
     }
     // Radiation
     if (radiation > 0) {
@@ -511,18 +513,16 @@ void player::action_taken()
 
 void player::update_morale()
 {
-    // Decay existing morale entries.
-    for( size_t i = 0; i < morale.size(); i++ ) {
-        morale[i].proceed();
+    const auto proceed = []( morale_point &m ) { m.proceed(); };
+    const auto is_expired = []( const morale_point &m ) -> bool { return m.is_expired(); };
 
-        if( morale[i].is_expired() ) {
-            morale.erase( morale.begin() + i );
-            i--;
-            continue;
-        }
-    }
+    std::for_each( morale.begin(), morale.end(), proceed );
+    const auto new_end = std::remove_if( morale.begin(), morale.end(), is_expired );
+    morale.erase( new_end, morale.end() );
     // We reapply persistent morale effects after every decay step, to keep them fresh.
     apply_persistent_morale();
+    // And invalidate the morale level to recalculate it on demand
+    invalidate_morale_level();
 }
 
 void player::apply_persistent_morale()
@@ -683,7 +683,7 @@ void player::update_mental_focus()
 int player::calc_focus_equilibrium() const
 {
     // Factor in pain, since it's harder to rest your mind while your body hurts.
-    int eff_morale = morale_level() - pain;
+    int eff_morale = get_morale_level() - pain;
     // Cenobites don't mind, though
     if (has_trait("CENOBITE")) {
         eff_morale = eff_morale + pain;
@@ -1493,8 +1493,8 @@ void player::recalc_speed_bonus()
         mod_speed_bonus(-pkill_penalty);
     }
 
-    if (abs(morale_level()) >= 100) {
-        int morale_bonus = int(morale_level() / 25);
+    if( abs( get_morale_level() ) >= 100 ) {
+        int morale_bonus = int( get_morale_level() / 25 );
         if (morale_bonus < -10) {
             morale_bonus = -10;
         } else if (morale_bonus > 10) {
@@ -1649,6 +1649,9 @@ int player::run_cost(int base_cost, bool diag) const
     }
     if (has_trait("PONDEROUS3")) {
         movecost *= 1.3f;
+    }
+    if( is_wearing("stillsuit") ) {
+        movecost *= 1.1f;
     }
     if( is_wearing("swim_fins") ) {
         movecost *= 1.5f;
@@ -2060,11 +2063,11 @@ void player::memorial( std::ofstream &memorial_file, std::string epitaph )
     //Effects (illnesses)
     memorial_file << _("Ongoing Effects:") << "\n";
     bool had_effect = false;
-    if(morale_level() >= 100) {
+    if( get_morale_level() >= 100 ) {
       had_effect = true;
       memorial_file << indent << _("Elated") << "\n";
     }
-    if(morale_level() <= -100) {
+    if( get_morale_level() <= -100 ) {
       had_effect = true;
       memorial_file << indent << _("Depressed") << "\n";
     }
@@ -2326,24 +2329,24 @@ void player::disp_info()
             }
         }
     }
-    if (abs(morale_level()) >= 100) {
-        bool pos = (morale_level() > 0);
+    if( abs( get_morale_level() ) >= 100 ) {
+        bool pos = ( get_morale_level() > 0 );
         effect_name.push_back(pos ? _("Elated") : _("Depressed"));
         std::stringstream morale_text;
-        if (abs(morale_level()) >= 200) {
+        if( abs( get_morale_level() ) >= 200 ) {
             morale_text << _("Dexterity") << (pos ? " +" : " ") <<
-                int(morale_level() / 200) << "   ";
+                int( get_morale_level() / 200 ) << "   ";
         }
-        if (abs(morale_level()) >= 180) {
+        if( abs( get_morale_level() ) >= 180 ) {
             morale_text << _("Strength") << (pos ? " +" : " ") <<
-                int(morale_level() / 180) << "   ";
+                int( get_morale_level() / 180 ) << "   ";
         }
-        if (abs(morale_level()) >= 125) {
+        if( abs( get_morale_level() ) >= 125 ) {
             morale_text << _("Perception") << (pos ? " +" : " ") <<
-                int(morale_level() / 125) << "   ";
+                int( get_morale_level() / 125 ) << "   ";
         }
         morale_text << _("Intelligence") << (pos ? " +" : " ") <<
-            int(morale_level() / 100) << "   ";
+            int( get_morale_level() / 100 ) << "   ";
         effect_text.push_back(morale_text.str());
     }
     if (pain - pkill > 0) {
@@ -2702,7 +2705,7 @@ Strength - 4;    Dexterity - 4;    Intelligence - 4;    Perception - 4"));
                   (pen < 10 ? " " : ""), pen);
         line++;
     }
-    pen = int(morale_level() / 25);
+    pen = int( get_morale_level() / 25 );
     if (abs(pen) >= 4) {
         if (pen > 10)
             pen = 10;
@@ -3311,11 +3314,12 @@ void player::disp_morale()
     mvwprintz(w, 2,  1, c_ltgray, _("Name"));
     mvwprintz(w, 2, name_column_width+2, c_ltgray, _("Value"));
 
+    const morale_mult mult = get_traits_mult();
     // Print out the morale entries.
     for (size_t i = 0; i < morale.size(); i++)
     {
         std::string name = morale[i].get_name();
-        int bonus = net_morale(morale[i]);
+        int bonus = morale[i].get_net_bonus( mult );
 
         // Print out the name.
         trim_and_print(w, i + 3,  1, name_column_width, (bonus < 0 ? c_red : c_green), name.c_str());
@@ -3326,7 +3330,7 @@ void player::disp_morale()
     }
 
     // Print out the total morale, right-justified.
-    int mor = morale_level();
+    int mor = get_morale_level();
     mvwprintz(w, 20, 1, (mor < 0 ? c_red : c_green), _("Total:"));
     mvwprintz(w, 20, number_pos, (mor < 0 ? c_red : c_green), "% 6d", mor);
 
@@ -3663,7 +3667,7 @@ void player::disp_status( WINDOW *w, WINDOW *w2 )
         mvwprintz( w, sideStyle ? 0 : 3, 0, col_pain, _( "Pain %d" ), pain - pkill );
     }
 
-    int morale_cur = morale_level();
+    int morale_cur = get_morale_level();
     nc_color col_morale = c_white;
     if( morale_cur >= 10 ) {
         col_morale = c_green;
@@ -5568,7 +5572,10 @@ void player::update_needs( int rate_multiplier )
     if( has_trait("PLANTSKIN") ) {
         thirst_rate -= 0.2f;
     }
-
+    if( is_wearing("stillsuit") ) {
+        thirst_rate -= 0.3f;
+    }
+    
     if( has_trait("THIRST") ) {
         thirst_rate += 0.5f;
     } else if( has_trait("THIRST2") ) {
@@ -8277,7 +8284,7 @@ void player::suffer()
             it->irridation += static_cast<int>(delta);
 
             // If in inventory (not worn), don't print anything.
-            if (inv.has_item(it)) {
+            if( inv.has_item( *it ) ) {
                 continue;
             }
 
@@ -8813,54 +8820,53 @@ void player::update_body_wetness( const w_point &weather )
     // TODO: Make clothing slow down drying
 }
 
-int player::net_morale(morale_point effect) const
+morale_mult player::get_traits_mult() const
 {
-    double bonus = effect.get_bonus();
+    morale_mult ret;
 
-    // Optimistic characters focus on the good things in life,
-    // and downplay the bad things.
-    if (has_trait("OPTIMISTIC"))
-    {
-        if (bonus >= 0)
-        {
-            bonus *= 1.25;
-        }
-        else
-        {
-            bonus *= 0.75;
-        }
+    if( has_trait( "OPTIMISTIC" ) ) {
+        ret *= morale_mults::optimistic;
     }
 
-     // Again, those grouchy Bad-Tempered folks always focus on the negative.
-     // They can't handle positive things as well.  They're No Fun.  D:
-    if (has_trait("BADTEMPER"))
-    {
-        if (bonus < 0)
-        {
-            bonus *= 1.25;
-        }
-        else
-        {
-            bonus *= 0.75;
-        }
-    }
-    return bonus;
-}
-
-int player::morale_level() const
-{
-    // Add up all of the morale bonuses (and penalties).
-    int ret = 0;
-    for (auto &i : morale) {
-        ret += net_morale(i);
-    }
-
-    // Prozac reduces negative morale by 75%.
-    if (has_effect( effect_took_prozac ) && ret < 0) {
-        ret = int(ret / 4);
+    if( has_trait( "BADTEMPER" ) ) {
+        ret *= morale_mults::badtemper;
     }
 
     return ret;
+}
+
+morale_mult player::get_effects_mult() const
+{
+    morale_mult ret;
+
+    //TODO: Maybe add something here to cheer you up as well?
+    if( has_effect( effect_took_prozac ) ) {
+        ret *= morale_mults::prozac;
+    }
+
+    return ret;
+}
+
+int player::get_morale_level() const
+{
+    if ( !morale_level_is_valid ) {
+        const morale_mult mult = get_traits_mult();
+
+        morale_level = 0;
+        for( auto &i : morale ) {
+            morale_level += i.get_net_bonus( mult );
+        }
+
+        morale_level *= get_effects_mult();
+        morale_level_is_valid = true;
+    }
+
+    return morale_level;
+}
+
+void player::invalidate_morale_level()
+{
+    morale_level_is_valid = false;
 }
 
 void player::add_morale(morale_type type, int bonus, int max_bonus,
@@ -8870,13 +8876,22 @@ void player::add_morale(morale_type type, int bonus, int max_bonus,
     // Search for a matching morale entry.
     for( auto &i : morale ) {
         if( i.get_type() == type && i.get_item_type() == item_type ) {
+            const int prev_bonus = i.get_bonus();
+
             i.add( bonus, max_bonus, duration, decay_start, capped );
+            if ( i.get_bonus() != prev_bonus ) {
+                invalidate_morale_level();
+            }
             return;
         }
     }
 
     morale_point new_morale( type, item_type, bonus, duration, decay_start );
-    morale.push_back( new_morale );
+
+    if( !new_morale.is_expired() ) {
+        morale.push_back( new_morale );
+        invalidate_morale_level();
+    }
 }
 
 int player::has_morale( morale_type type ) const
@@ -8893,10 +8908,18 @@ void player::rem_morale(morale_type type, const itype* item_type)
 {
     for( size_t i = 0; i < morale.size(); ++i ) {
         if( morale[i].get_type() == type && morale[i].get_item_type() == item_type ) {
+            if ( morale[i].get_bonus() ) {
+                invalidate_morale_level();
+            }
             morale.erase( morale.begin() + i );
             break;
         }
     }
+}
+
+bool player::has_morale_to_read() const
+{
+    return get_morale_level() >= -40;
 }
 
 void player::process_active_items()
@@ -9019,7 +9042,7 @@ item player::reduce_charges( int position, long quantity )
 
 item player::reduce_charges( item *it, long quantity )
 {
-    if( !has_item( it ) ) {
+    if( !has_item( *it ) ) {
         debugmsg( "invalid item (name %s) for reduce_charges", it->tname().c_str() );
         return ret_null;
     }
@@ -9485,17 +9508,6 @@ int  player::leak_level( std::string flag ) const
     return leak_level;
 }
 
-bool player::has_item(int position) {
-    return !i_at(position).is_null();
-}
-
-bool player::has_item( const item *it ) const
-{
-    return has_item_with( [&it]( const item & i ) {
-        return &i == it;
-    } );
-}
-
 bool player::has_mission_item(int mission_id) const
 {
     return mission_id != -1 && has_item_with( has_mission_item_filter{ mission_id } );
@@ -9738,44 +9750,7 @@ bool player::wield( item& target )
     }
 
     if( target.is_null() ) {
-        uimenu prompt;
-        prompt.text = string_format( _( "Stop wielding %s?" ), weapon.tname().c_str() );
-        prompt.return_invalid = true;
-
-        std::vector<std::function<void()>> actions;
-
-        prompt.addentry( -1, volume_carried() + weapon.volume() <= volume_capacity(), '1', _( "Store in inventory" ) );
-        actions.push_back( [&]{
-            moves -= item_handling_cost( weapon );
-            inv.add_item_keep_invlet( remove_weapon() );
-            inv.unsort();
-        });
-
-        prompt.addentry( -1, true, '2', _( "Drop item" ) );
-        actions.push_back( [&]{ g->m.add_item_or_charges( pos(), remove_weapon() ); });
-
-        prompt.addentry( -1, rate_action_wear( weapon ) == HINT_GOOD, '3', _( "Wear item" ) );
-        actions.push_back( [&]{ wear( -1 ); });
-
-        for( auto& e : worn ) {
-            if( e.can_holster( weapon ) ) {
-                prompt.addentry( -1, true, e.invlet, _( "Store in %s" ), e.tname().c_str() );
-                actions.push_back( [&]{
-                    auto ptr = dynamic_cast<const holster_actor *>( e.type->get_use( "holster" )->get_actor_ptr() );
-                    ptr->store( *this, e, weapon );
-                });
-            }
-        }
-
-        prompt.query();
-        if( prompt.ret >= 0 ) {
-            actions[ prompt.ret ]();
-            if( weapon.is_null() ) {
-                recoil = MIN_RECOIL;
-                return true;
-            }
-        }
-        return false;
+        return dispose_item( weapon, string_format( _( "Stop wielding %s?" ), weapon.tname().c_str() ) );
     }
 
     if( &weapon == &target ) {
@@ -10083,6 +10058,45 @@ bool player::can_use( const item& it, bool interactive ) const {
         }
         return true;
     });
+}
+
+bool player::dispose_item( item& obj, const std::string& prompt )
+{
+    uimenu menu;
+    menu.text = prompt.empty() ? string_format( _( "Dispose of %s" ), obj.tname().c_str() ) : prompt;
+    menu.return_invalid = true;
+
+    std::vector<std::function<void()>> actions;
+
+    menu.addentry( -1, volume_carried() + obj.volume() <= volume_capacity(), '1', _( "Store in inventory" ) );
+    actions.emplace_back( [&]{
+        moves -= item_handling_cost( obj );
+        inv.add_item_keep_invlet( i_rem( &obj ) );
+        inv.unsort();
+    });
+
+    menu.addentry( -1, true, '2', _( "Drop item" ) );
+    actions.emplace_back( [&]{ g->m.add_item_or_charges( pos(), i_rem( &obj ) ); } );
+
+    menu.addentry( -1, rate_action_wear( obj ) == HINT_GOOD, '3', _( "Wear item" ) );
+    actions.emplace_back( [&]{ wear_item( i_rem( &obj ) ); } );
+
+    for( auto& e : worn ) {
+        if( e.can_holster( obj ) ) {
+            menu.addentry( -1, true, e.invlet, _( "Store in %s" ), e.tname().c_str() );
+            actions.emplace_back( [&]{
+                auto ptr = dynamic_cast<const holster_actor *>( e.type->get_use( "holster" )->get_actor_ptr() );
+                ptr->store( *this, e, obj );
+            });
+        }
+    }
+
+    menu.query();
+    if( menu.ret >= 0 ) {
+        actions[ menu.ret ]();
+        return true;
+    }
+    return false;
 }
 
 int player::item_handling_cost( const item& it, bool effects, int factor ) const {
@@ -10584,35 +10598,20 @@ hint_rating player::rate_action_reload( const item &it ) const
     hint_rating res = HINT_CANT;
 
     // Guns may contain additional reloadable mods so check these first
-    for( const auto& mod : it.contents ) {
-        if( mod.is_auxiliary_gunmod() ) {
-            switch( rate_action_reload( mod ) ) {
-                case HINT_GOOD:
-                    return HINT_GOOD;
+    for( const auto mod : it.gunmods() ) {
+        switch( rate_action_reload( *mod ) ) {
+            case HINT_GOOD:
+                return HINT_GOOD;
 
-                case HINT_CANT:
-                    continue;
+            case HINT_CANT:
+                continue;
 
-                case HINT_IFFY:
-                    res = HINT_IFFY;
-            }
+            case HINT_IFFY:
+                res = HINT_IFFY;
         }
     }
 
-    if( it.has_flag( "NO_RELOAD" ) || it.has_flag( "RELOAD_AND_SHOOT" ) ) {
-        return res;
-    }
-
-    // if item uses detachable magazines do we already have one loaded?
-    if( !it.magazine_integral() ) {
-        return it.magazine_current() ? HINT_IFFY : HINT_GOOD;
-    }
-
-    if( it.ammo_capacity() <= 0 || it.ammo_type() == "NULL" ) {
-        return res;
-    }
-
-    return it.ammo_remaining() < it.ammo_capacity() ? HINT_GOOD : HINT_IFFY;
+    return it.can_reload() ? HINT_GOOD : res;
 }
 
 hint_rating player::rate_action_unload( const item &it ) const
@@ -10773,15 +10772,13 @@ void player::use(int inventory_position)
         invoke_item( used );
     } else if (used->is_gunmod()) {
 
-        ///\EFFECT_GUN allows installation of more difficult gun mods
-        if( !( get_skill_level( skill_gun ) >= used->type->gunmod->req_skill ) ) {
-            add_msg( m_info, _( "You need to be at least level %d in the marksmanship skill "
-                                "before you can install this mod." ), used->type->gunmod->req_skill);
+        // first check at least the minimum requirements are met
+        if( !can_use( *used ) ) {
             return;
         }
 
         int gunpos = g->inv_for_filter( _("Select gun to modify:" ), [&used]( const item& e ) {
-            return e.gunmod_compatible( *used, false );
+            return e.gunmod_compatible( *used, false, false );
         } );
 
         if( gunpos == INT_MIN ) {
@@ -10983,7 +10980,7 @@ void player::gunmod_add( item &gun, item &mod )
         return;
     }
 
-    if( !has_item( &gun ) && !has_item( &mod ) ) {
+    if( !has_item( gun ) && !has_item( mod ) ) {
         debugmsg( "Tried gunmod installation but mod/gun not in player possession" );
         return;
     }
@@ -11106,7 +11103,7 @@ hint_rating player::rate_action_read( const item &it ) const
 
     if (g && g->m.ambient_light_at(pos()) < 8 && LL_LIT > g->m.light_at(pos())) {
         return HINT_IFFY;
-    } else if (morale_level() < MIN_MORALE_READ && it.type->book->fun <= 0) {
+    } else if( !has_morale_to_read() && it.type->book->fun <= 0 ) {
         return HINT_IFFY; //won't read non-fun books when sad
     } else if (it.type->book->intel > 0 && has_trait("ILLITERATE") && assistants == 0) {
         return HINT_IFFY;
@@ -11214,7 +11211,7 @@ bool player::read(int inventory_position)
             return false;
         }
         // otherwise do nothing as there's no associated skill
-    } else if (morale_level() < MIN_MORALE_READ && tmp->fun <= 0) { // See morale.h
+    } else if( !has_morale_to_read() && tmp->fun <= 0 ) { // See morale.h
         add_msg(m_info, _("What's the point of studying?  (Your morale is too low!)"));
         return false;
     } else if( skill_level < tmp->req ) {
