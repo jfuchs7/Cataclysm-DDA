@@ -43,6 +43,7 @@
 #include "cata_utility.h"
 #include "iuse_actor.h"
 #include "catalua.h"
+#include "npc.h"
 #include "cata_utility.h"
 
 #include <map>
@@ -141,6 +142,8 @@ const efftype_id effect_valium( "valium" );
 const efftype_id effect_visuals( "visuals" );
 const efftype_id effect_weed_high( "weed_high" );
 const efftype_id effect_winded( "winded" );
+
+const matype_id style_none( "style_none" );
 
 // use this instead of having to type out 26 spaces like before
 static const std::string header_spaces(26, ' ');
@@ -3591,28 +3594,19 @@ void player::disp_status( WINDOW *w, WINDOW *w2 )
 
     // Print currently used style or weapon mode.
     std::string style = "";
-    if( is_armed() ) {
-        // Show normal if no martial style is selected,
-        // or if the currently selected style does nothing for your weapon.
-        if( style_selected == matype_id( "style_none" ) ||
-            ( !can_melee() && !style_selected.obj().has_weapon( weapon.type->id ) ) ) {
-            style = _( "Normal" );
-        } else {
-            style = style_selected.obj().name;
-        }
-
-        int x = sideStyle ? ( getmaxx( weapwin ) - 13 ) : 0;
-        mvwprintz( weapwin, 1, x, c_red, style.c_str() );
+    const auto style_color = is_armed() ? c_red : c_blue;
+    const auto &cur_style = style_selected.obj();
+    if( cur_style.weapon_valid( weapon ) ) {
+        style = cur_style.name;
+    } else if( is_armed() ) {
+        style = _( "Normal" );
     } else {
-        if( style_selected == matype_id( "style_none" ) ) {
-            style = _( "No Style" );
-        } else {
-            style = style_selected.obj().name;
-        }
-        if( style != "" ) {
-            int x = sideStyle ? ( getmaxx( weapwin ) - 13 ) : 0;
-            mvwprintz( weapwin, 1, x, c_blue, style.c_str() );
-        }
+        style = _( "No Style" );
+    }
+    
+    if( !style.empty() ) {
+        int x = sideStyle ? ( getmaxx( weapwin ) - 13 ) : 0;
+        mvwprintz( weapwin, 1, x, style_color, style.c_str() );
     }
 
     wmove( w, sideStyle ? 1 : 2, 0 );
@@ -10175,7 +10169,44 @@ int player::item_handling_cost( const item& it, bool effects, int factor ) const
         mv *= 4;
     }
 
-    return std::min( std::max( mv, MIN_HANDLING_COST ), MAX_HANDLING_COST );
+    return std::min( std::max( mv, 0 ), MAX_HANDLING_COST );
+}
+
+int player::item_reload_cost( const item& it, const item& ammo ) const
+{
+    int mv = item_handling_cost( ammo );
+
+    if( ammo.has_flag( "MAG_BULKY" ) ) {
+        mv *= 1.5; // bulky magazines take longer to insert
+    }
+
+    if( !it.is_gun() || ! it.is_magazine() ) {
+        return mv + 100; // reload a tool
+    }
+
+    ///\EFFECT_GUN decreases the time taken to reload a magazine
+    ///\EFFECT_PISTOL decreases time taken to reload a pistol
+    ///\EFFECT_SMG decreases time taken to reload an SMG
+    ///\EFFECT_RIFLE decreases time taken to reload a rifle
+    ///\EFFECT_SHOTGUN decreases time taken to reload a shotgun
+    ///\EFFECT_LAUNCHER decreases time taken to reload a launcher
+
+    skill_id sk = it.is_gun() ? it.type->gun->skill_used : skill_gun;
+    int cost = it.is_gun() ? it.type->gun->reload_time : it.type->magazine->reload_time;
+
+    mv += cost / ( 1 + std::min( double( get_skill_level( sk ) ) * 0.075, 0.75 ) );
+
+    if( it.is_magazine() )  {
+        // for magazines reload time is per round
+        mv *= std::min( ammo.charges, it.ammo_capacity() - it.ammo_remaining() );
+    }
+
+    if( it.has_flag( "STR_RELOAD" ) ) {
+        ///\EFFECT_STR reduces reload time of some weapons
+        mv -= get_str() * 20;
+    }
+
+    return std::max( mv, 0 );
 }
 
 bool player::wear(int inventory_position, bool interactive)
@@ -10917,8 +10948,6 @@ void player::use(int inventory_position)
             return;
         }
 
-        // @todo implement sensible time penalty
-        moves -= int( used->reload_time( *this ) / 2 );
         return;
 
     } else if ( used->type->has_use() ) {
@@ -10969,7 +10998,7 @@ bool player::invoke_item( item* used, const tripoint &pt )
         return false;
     }
 
-    const std::string &method = used->type->use_methods[choice].get_type_name();
+    const std::string &method = used->type->use_methods[choice].get_type();
     long charges_used = used->type->invoke( this, used, pt, method );
     return ( used->is_tool() || used->is_food() ) && consume_charges( *used, charges_used );
 }
@@ -11027,6 +11056,9 @@ void player::remove_gunmod( item *weapon, unsigned id )
     if( gunmod->is_in_auxiliary_mode() ) {
         weapon->next_mode();
     }
+
+    moves -= gunmod->type->gunmod->install_time / 2;
+
     i_add_or_drop( *gunmod );
     weapon->contents.erase( weapon->contents.begin() + id );
 }
@@ -12613,7 +12645,6 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
             if (has_trait("CHITIN3") || has_trait("CHITIN_FUR3")) {
                 elem.amount -= 8;
             }
-            elem.amount -= mabuff_arm_cut_bonus();
         }
         if( elem.type == DT_BASH ) {
             if (has_trait("FEATHERS")) {
@@ -12652,8 +12683,9 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
             if (has_trait("HOLLOW_BONES")) {
                 elem.amount *= 1.8;
             }
-            elem.amount -= mabuff_arm_bash_bonus();
         }
+
+        elem.amount -= mabuff_armor_bonus( elem.type );
 
         if( elem.amount < 0 ) {
             elem.amount = 0;

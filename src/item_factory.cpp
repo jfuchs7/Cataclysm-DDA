@@ -40,6 +40,8 @@ typedef std::set<std::string> t_string_set;
 static t_string_set item_blacklist;
 static t_string_set item_whitelist;
 
+static std::set<std::string> item_options;
+
 std::unique_ptr<Item_factory> item_controller( new Item_factory() );
 
 bool item_is_blacklisted(const std::string &id)
@@ -66,10 +68,29 @@ void Item_factory::finialize_item_blacklist()
             debugmsg("item on blacklist %s does not exist", a->c_str());
         }
     }
-    for (std::map<std::string, itype *>::const_iterator a = m_templates.begin(); a != m_templates.end();
-         ++a) {
-        const std::string &itm = a->first;
-        if (!item_is_blacklisted(itm)) {
+    const bool magazines_blacklisted = item_options.count("blacklist_magazines") != 0;
+    // Can't be part of the blacklist loop because the magazines might be
+    // deleted before the guns are processed.
+    if( magazines_blacklisted ) {
+        for( std::pair<const std::string, itype *> &entry : m_templates ) {
+            itype *type = entry.second;
+            // find the guns, look up their default magazine, and add its capacity to the gun.
+            if( type->magazine_default.empty() ) {
+                continue;
+            }
+            itype *default_magazine = m_templates[ type->magazine_default.begin()->second ];
+            type->gun->clip = default_magazine->magazine->capacity;
+            type->gun->reload_time = default_magazine->magazine->capacity *
+                default_magazine->magazine->reload_time;
+            type->magazines.clear();
+            type->magazine_default.clear();
+            type->magazine_well = 0;
+        }
+    }
+    for( std::pair<const std::string, itype *> &entry : m_templates ) {
+        const std::string &itm = entry.first;
+        if( !item_is_blacklisted( itm ) &&
+            !( magazines_blacklisted && entry.second->magazine != nullptr ) ) {
             continue;
         }
         for( auto &elem : m_template_groups ) {
@@ -94,22 +115,27 @@ void Item_factory::finialize_item_blacklist()
     }
 }
 
-void add_to_set(t_string_set &s, JsonObject &json, const std::string &name)
+void add_to_set( t_string_set &s, JsonObject &json, const std::string &name )
 {
-    JsonArray jarr = json.get_array(name);
-    while (jarr.has_more()) {
-        s.insert(jarr.next_string());
+    JsonArray jarr = json.get_array( name );
+    while( jarr.has_more() ) {
+        s.insert( jarr.next_string() );
     }
 }
 
-void Item_factory::load_item_blacklist(JsonObject &json)
+void Item_factory::load_item_blacklist( JsonObject &json )
 {
-    add_to_set(item_blacklist, json, "items");
+    add_to_set( item_blacklist, json, "items" );
 }
 
-void Item_factory::load_item_whitelist(JsonObject &json)
+void Item_factory::load_item_whitelist( JsonObject &json )
 {
-    add_to_set(item_whitelist, json, "items");
+    add_to_set( item_whitelist, json, "items" );
+}
+
+void Item_factory::load_item_option( JsonObject &json )
+{
+    add_to_set( item_options, json, "options" );
 }
 
 Item_factory::~Item_factory()
@@ -120,6 +146,27 @@ Item_factory::~Item_factory()
 Item_factory::Item_factory()
 {
     init();
+}
+
+class iuse_function_wrapper : public iuse_actor
+{
+    private:
+        use_function_pointer cpp_function;
+    public:
+        iuse_function_wrapper( const use_function_pointer f ) : cpp_function( f ) { }
+        ~iuse_function_wrapper() = default;
+        long use( player *p, item *it, bool a, const tripoint &pos ) const override {
+            iuse tmp;
+            return ( tmp.*cpp_function )( p, it, a, pos );
+        }
+        iuse_actor *clone() const override {
+            return new iuse_function_wrapper( *this );
+        }
+};
+
+use_function::use_function( const use_function_pointer f )
+    : use_function( new iuse_function_wrapper( f ) )
+{
 }
 
 void Item_factory::init()
@@ -308,6 +355,15 @@ void Item_factory::init()
     iuse_function_list["MULTICOOKER"] = &iuse::multicooker;
 
     iuse_function_list["REMOTEVEH"] = &iuse::remoteveh;
+
+    // The above creates iuse_actor instances (from the function pointers) that have
+    // no `type` set. This loops sets the type to the same as the key in the map.
+    for( auto &e : iuse_function_list ) {
+        iuse_actor * const actor = e.second.get_actor_ptr();
+        if( actor ) {
+            actor->type = e.first;
+        }
+    }
 
     create_inital_categories();
 
@@ -532,9 +588,11 @@ void Item_factory::check_definitions() const
             main_stream.str(std::string());
         }
     }
-    for( auto &mag : magazines_defined ) {
-        if( magazines_used.count( mag ) == 0 ) {
-            main_stream << "Magazine " << mag << " defined but not used.\n";
+    if( item_options.count( "blacklist_magazines" ) == 0 ) {
+        for( auto &mag : magazines_defined ) {
+            if( magazines_used.count( mag ) == 0 ) {
+                main_stream << "Magazine " << mag << " defined but not used.\n";
+            }
         }
     }
     const std::string &buffer = main_stream.str();
@@ -1022,6 +1080,7 @@ void Item_factory::load_basic_info(JsonObject &jo, itype *new_item_template)
 
     // And then proceed to assign the correct field
     new_item_template->price = jo.get_int( "price" );
+    new_item_template->price_post = jo.get_int( "price_postapoc", new_item_template->price );
     new_item_template->name = jo.get_string( "name" ).c_str();
     if( jo.has_member( "name_plural" ) ) {
         new_item_template->name_plural = jo.get_string( "name_plural" ).c_str();
@@ -1295,6 +1354,7 @@ void Item_factory::clear()
     m_templates.clear();
     item_blacklist.clear();
     item_whitelist.clear();
+    item_options.clear();
 }
 
 Item_group *make_group_or_throw(Item_spawn_data *&isd, Item_group::Type t)
@@ -1423,7 +1483,6 @@ void Item_factory::load_item_group(JsonObject &jsobj, const Group_tag &group_id,
     Item_group *ig = dynamic_cast<Item_group *>(isd);
     if (subtype == "old") {
         ig = make_group_or_throw(isd, Item_group::G_DISTRIBUTION);
-        ig->with_ammo = jsobj.get_bool("guns_with_ammo", ig->with_ammo);
     } else if (subtype == "collection") {
         ig = make_group_or_throw(isd, Item_group::G_COLLECTION);
     } else if (subtype == "distribution") {
@@ -1431,6 +1490,9 @@ void Item_factory::load_item_group(JsonObject &jsobj, const Group_tag &group_id,
     } else {
         jsobj.throw_error("unknown item group type", "subtype");
     }
+
+    ig->with_ammo = jsobj.get_int( "ammo", ig->with_ammo );
+    ig->with_magazine= jsobj.get_int( "magazine", ig->with_magazine );
 
     if (subtype == "old") {
         JsonArray items = jsobj.get_array("items");
@@ -1574,6 +1636,8 @@ void Item_factory::set_uses_from_object(JsonObject obj, std::vector<use_function
         newfun = load_actor<musical_instrument_actor>( obj );
     } else if( type == "holster" ) {
         newfun = load_actor<holster_actor>( obj );
+    } else if( type == "bandolier" ) {
+        newfun = load_actor<bandolier_actor>( obj );
     } else if( type == "repair_item" ) {
         newfun = load_actor<repair_item_actor>( obj );
     } else if( type == "heal" ) {
@@ -1664,31 +1728,6 @@ const item_category *Item_factory::get_category(const std::string &id)
     cat.id = id;
     cat.name = id;
     return &cat;
-}
-
-const use_function *Item_factory::get_iuse(const std::string &id)
-{
-    const auto &iter = iuse_function_list.find( id );
-    if( iter != iuse_function_list.end() ) {
-        return &iter->second;
-    }
-
-    return nullptr;
-}
-
-const std::string &Item_factory::inverse_get_iuse( const use_function *fun )
-{
-    // Ugly and slow - compares values to get the key
-    // Don't use when performance matters
-    for( const auto &pr : iuse_function_list ) {
-        if( pr.second == *fun ) {
-            return pr.first;
-        }
-    }
-
-    debugmsg( "Tried to get id of a function not in iuse_function_list" );
-    const static std::string errstr("ERROR");
-    return errstr;
 }
 
 const std::string &Item_factory::calc_category( const itype *it )

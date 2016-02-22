@@ -259,7 +259,12 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
     // Legacy function, don't use.
     void load_info( const std::string &data );
  char symbol() const;
- int price() const;
+        /**
+         * Returns the monetary value of an item.
+         * If `practical` is false, returns pre-cataclysm market value,
+         * otherwise returns approximate post-cataclysm value.
+         */
+        int price( bool practical ) const;
 
 
         bool stacks_with( const item &rhs ) const;
@@ -301,6 +306,11 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      * Damage of type @ref DT_CUT that is caused by using this item as melee weapon.
      */
     int damage_cut() const;
+    /**
+     * Damage of a given type that is caused by using this item as melee weapon.
+     * NOTE: Does NOT respect the legacy "stabbing is cutting"!
+     */
+    int damage_by_type( damage_type dt ) const;
     /**
      * Whether the character needs both hands to wield this item.
      */
@@ -645,7 +655,7 @@ public:
  bool is_food_container(player const*u) const;  // Ditto
  bool is_food() const;                // Ignoring the ability to eat batteries, etc.
  bool is_food_container() const;      // Ignoring the ability to eat batteries, etc.
- bool is_ammo_container() const;
+ bool is_ammo_container() const; // does this item contain ammo? (excludes magazines)
  bool is_bionic() const;
  bool is_magazine() const;
  bool is_ammo() const;
@@ -1064,11 +1074,7 @@ public:
         /*@{*/
         bool is_gunmod() const;
         bool is_gun() const;
-        /**
-         * How much moves (@ref Creature::moves) it takes to reload this item.
-         * This also applies to tools.
-         */
-        int reload_time( const player &u ) const;
+
         /** Quantity of ammunition currently loaded in tool, gun or axuiliary gunmod */
         long ammo_remaining() const;
         /** Maximum quantity of ammunition loadable for tool, gun or axuiliary gunmod */

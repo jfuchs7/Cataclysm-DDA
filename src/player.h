@@ -143,7 +143,9 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         player &operator=(player &&) = default;
 
         // newcharacter.cpp
-        int create(character_type type, std::string tempname = "");
+        bool create(character_type type, std::string tempname = "");
+        void randomize( bool random_scenario, int &points );
+        bool load_template( const std::string &template_name );
         /** Calls Character::normalize()
          *  normalizes HP and bodytemperature
          */
@@ -436,18 +438,12 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int mabuff_block_bonus() const;
         /** Returns the speed bonus from martial arts buffs */
         int mabuff_speed_bonus() const;
-        /** Returns the bash armor bonus from martial arts buffs */
-        int mabuff_arm_bash_bonus() const;
-        /** Returns the cut armor bonus from martial arts buffs */
-        int mabuff_arm_cut_bonus() const;
-        /** Returns the bash damage multiplier from martial arts buffs */
-        float mabuff_bash_mult() const;
-        /** Returns the bash damage bonus from martial arts buffs, applied after the multiplier */
-        int mabuff_bash_bonus() const;
-        /** Returns the cut damage multiplier from martial arts buffs */
-        float mabuff_cut_mult() const;
-        /** Returns the cut damage bonus from martial arts buffs, applied after the multiplier */
-        int mabuff_cut_bonus() const;
+        /** Returns the armor bonus against given type from martial arts buffs */
+        int mabuff_armor_bonus( damage_type type ) const;
+        /** Returns the damage multiplier to given type from martial arts buffs */
+        float mabuff_damage_mult( damage_type type ) const;
+        /** Returns the flat damage bonus to given type from martial arts buffs, applied after the multiplier */
+        int mabuff_damage_bonus( damage_type type ) const;
         /** Returns true if the player is immune to throws */
         bool is_throw_immune() const;
         /** Returns value of player's stable footing */
@@ -456,6 +452,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         bool is_quiet() const;
         /** Returns true if the current martial art works with the player's current weapon */
         bool can_melee() const;
+        /** Returns true if the current martial art ignores the current weapon and uses unarmed attacks instead. */
+        bool unarmed_override() const;
         /** Always returns false, since players can't dig currently */
         bool digging() const override;
         /** Returns true if the player is knocked over or has broken legs */
@@ -767,6 +765,10 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * @return cost in moves ranging from 0 to MAX_HANDLING_COST
          */
         int item_handling_cost( const item& it, bool effects = true, int factor = VOLUME_MOVE_COST) const;
+
+        /** Calculate (but do not deduct) the number of moves required when reloading an item */
+        int item_reload_cost( const item& it, const item& ammo ) const;
+
         /** Wear item; returns false on fail. If interactive is false, don't alert the player or drain moves on completion. */
         bool wear(int pos, bool interactive = true);
         /** Wear item; returns false on fail. If interactive is false, don't alert the player or drain moves on completion. */
