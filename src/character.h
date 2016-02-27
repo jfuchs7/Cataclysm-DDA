@@ -26,6 +26,9 @@ enum vision_modes {
     URSINE_VISION,
     BOOMERED,
     DARKNESS,
+    IR_VISION,
+    VISION_CLAIRVOYANCE,
+    VISION_CLAIRVOYANCE_SUPER,
     NUM_VISION_MODES
 };
 
@@ -371,6 +374,9 @@ class Character : public Creature, public visitable<Character>
 
         /** Returns true if the character's current weapon can be reloaded (ammo must be available). */
         bool can_reload();
+
+        /** Maximum thrown range with a given item, taking all active effects into account. */
+        int throw_range( const item & ) const;
 
         int weight_carried() const;
         int volume_carried() const;

@@ -541,17 +541,7 @@
     "items":[
       ["knife_steak", 85],
       ["knife_butcher", 10],
-      ["knife_combat", 14],
       ["kukri", 1],
-      ["knife_rm42", 1],
-      ["knife_hunting", 4],
-      ["knife_rambo", 16],
-      ["throwing_knife", 4],
-      ["pockknife", 14],
-      ["knife_swissarmy", 6],
-      ["punch_dagger", 2],
-      ["knife_trench", 7],
-      ["switchblade", 4],
       ["tongs", 28],
       ["meat", 1]
     ]
@@ -1438,7 +1428,8 @@
   },{
     "type" : "item_group",
     "id" : "behindcounter",
-    "guns_with_ammo" : true,
+    "ammo": 50,
+    "magazine": 100,
     "items":[
       ["aspirin", 85],
       ["caffeine", 25],
@@ -2174,11 +2165,9 @@
       ["popcan_stove", 10],
       ["coffeemaker", 5],
       ["tin_plate", 10],
-      ["knife_combat", 14],
       ["kukri", 4],
       ["knife_hunting", 18],
       ["knife_rambo", 20],
-      ["throwing_knife", 7],
       ["machete", 5],
       ["vest", 15],
       ["backpack", 38],
@@ -2370,7 +2359,6 @@
       ["roller_blades", 20],
       ["rollerskates", 10],
       ["hotplate", 10],
-      ["knife_combat", 14],
       ["kukri", 2],
       ["knife_hunting", 12],
       ["knife_rambo", 20],
@@ -3660,13 +3648,15 @@
       ["cx4", 20],
       ["fn57", 20],
       ["fn_p90", 5],
-      ["glock_19", 20],
+      ["glock_19", 15],
+      ["glock_22", 20],
       ["hk_mp5", 10],
       ["l_enforcer_45", 10],
       ["m9",5],
       ["mossberg_500", 15],
       ["remington_700", 5],
       ["remington_870", 20],
+      ["sig_40", 20],
       ["usp_45", 10],
       ["usp_9mm", 10]
     ]
@@ -4660,7 +4650,8 @@
     "type":"item_group",
     "id":"survivorweapons",
     "comment": "Please add only weapons and ammo that are easy to scavenge or create ",
-    "guns_with_ammo" : true,
+    "ammo": 50,
+    "magazine": 100,
     "items":[
       ["nailbat", 10],
       ["bwirebat",10],
@@ -4829,6 +4820,7 @@
       ["baldric", 4],
       ["nodachi", 1],
       ["gambeson", 3],
+      ["tunic", 1],
       ["armor_lightplate", 1],
       ["armor_samurai", 1],
       ["helmet_kabuto", 1],
@@ -9642,7 +9634,8 @@
   },{
     "type" : "item_group",
     "id" : "college_camping",
-    "guns_with_ammo" : true,
+    "ammo": 50,
+    "magazine": 100,
     "items":[
       ["rope_30", 10],
       ["hatchet", 50],

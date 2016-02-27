@@ -13,6 +13,7 @@
 #include "input.h"
 #include "monster.h"
 #include "mtype.h"
+#include "player.h"
 
 const efftype_id effect_beartrap( "beartrap" );
 const efftype_id effect_bite( "bite" );
@@ -29,6 +30,8 @@ const efftype_id effect_infected( "infected" );
 const efftype_id effect_in_pit( "in_pit" );
 const efftype_id effect_lightsnare( "lightsnare" );
 const efftype_id effect_webbed( "webbed" );
+
+const skill_id skill_throw( "throw" );
 
 Character::Character()
 {
@@ -175,8 +178,8 @@ bool Character::move_effects(bool attacking)
                                     _("<npcname> frees themselves from the light snare!"));
             item string("string_36", calendar::turn);
             item snare("snare_trigger", calendar::turn);
-            g->m.add_item_or_charges(posx(), posy(), string);
-            g->m.add_item_or_charges(posx(), posy(), snare);
+            g->m.add_item_or_charges(pos(), string);
+            g->m.add_item_or_charges(pos(), snare);
         } else {
             add_msg_if_player(m_bad, _("You try to free yourself from the light snare, but can't get loose!"));
         }
@@ -192,8 +195,8 @@ bool Character::move_effects(bool attacking)
                                     _("<npcname> frees themselves from the heavy snare!"));
             item rope("rope_6", calendar::turn);
             item snare("snare_trigger", calendar::turn);
-            g->m.add_item_or_charges(posx(), posy(), rope);
-            g->m.add_item_or_charges(posx(), posy(), snare);
+            g->m.add_item_or_charges(pos(), rope);
+            g->m.add_item_or_charges(pos(), snare);
         } else {
             add_msg_if_player(m_bad, _("You try to free yourself from the heavy snare, but can't get loose!"));
         }
@@ -211,7 +214,7 @@ bool Character::move_effects(bool attacking)
             add_msg_player_or_npc(m_good, _("You free yourself from the bear trap!"),
                                     _("<npcname> frees themselves from the bear trap!"));
             item beartrap("beartrap", calendar::turn);
-            g->m.add_item_or_charges(posx(), posy(), beartrap);
+            g->m.add_item_or_charges(pos(), beartrap);
         } else {
             add_msg_if_player(m_bad, _("You try to free yourself from the bear trap, but can't get loose!"));
         }
@@ -414,6 +417,22 @@ void Character::recalc_sight_limits()
     }
     if( has_trait("BIRD_EYE") ) {
         vision_mode_cache.set( BIRD_EYE);
+    }
+
+    // Not exactly a sight limit thing, but related enough
+    if( has_active_bionic( "bio_infrared" ) ||
+        has_trait( "INFRARED" ) ||
+        has_trait( "LIZ_IR" ) ||
+        worn_with_flag( "IR_EFFECT" ) ) {
+        vision_mode_cache.set( IR_VISION );
+    }
+
+    if( has_artifact_with( AEP_SUPER_CLAIRVOYANCE ) ) {
+        vision_mode_cache.set( VISION_CLAIRVOYANCE_SUPER );
+    }
+
+    if( has_artifact_with( AEP_CLAIRVOYANCE ) ) {
+        vision_mode_cache.set( VISION_CLAIRVOYANCE );
     }
 }
 
@@ -737,7 +756,7 @@ void find_ammo_helper( T& src, const item& obj, bool empty, Output out, bool nes
                 // some liquids are ammo but we can't reload with them unless within a container
                 return VisitResponse::SKIP;
             }
-            if( node->is_ammo_container() ) {
+            if( node->is_ammo_container() && !node->contents[0].made_of( SOLID ) ) {
                 if( node->contents[0].ammo_type() == ammo ) {
                     out = item_location( src, node );
                 }
@@ -1632,5 +1651,42 @@ nc_color Character::symbol_color() const
     }
 
     return basic;
+}
+
+int Character::throw_range( const item &it ) const
+{
+    if( it.is_null() ) {
+        return -1;
+    }
+
+    item tmp = it;
+
+    if( tmp.count_by_charges() && tmp.charges > 1 ) {
+        tmp.charges = 1;
+    }
+
+    ///\EFFECT_STR determines maximum weight that can be thrown
+    if( (tmp.weight() / 113) > int(str_cur * 15) ) {
+        return 0;
+    }
+    // Increases as weight decreases until 150 g, then decreases again
+    ///\EFFECT_STR increases throwing range, vs item weight (high or low)
+    int ret = (str_cur * 8) / (tmp.weight() >= 150 ? tmp.weight() / 113 : 10 - int(tmp.weight() / 15));
+    ret -= int(tmp.volume() / 4);
+    if( has_active_bionic("bio_railgun") && (tmp.made_of("iron") || tmp.made_of("steel"))) {
+        ret *= 2;
+    }
+    if( ret < 1 ) {
+        return 1;
+    }
+    // Cap at double our strength + skill
+    ///\EFFECT_STR caps throwing range
+
+    ///\EFFECT_THROW caps throwing range
+    if( ret > str_cur * 1.5 + get_skill_level( skill_throw ) ) {
+        return str_cur * 1.5 + get_skill_level( skill_throw );
+    }
+
+    return ret;
 }
 

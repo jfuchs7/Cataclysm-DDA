@@ -493,7 +493,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          */
         void melee_attack(Creature &t, bool allow_special, const matec_id &force_technique) override;
         /** Returns a weapon's modified dispersion value */
-        double get_weapon_dispersion( item *weapon, bool random ) const;
+        double get_weapon_dispersion( const item *weapon, bool random ) const;
         /** Returns true if a gun misfires, jams, or has other problems, else returns false */
         bool handle_gun_damage( const itype &firing, const std::set<std::string> &curammo_effects );
 
@@ -613,8 +613,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int climbing_cost( const tripoint &from, const tripoint &to ) const;
 
         // ranged.cpp
-        /** Returns the throw range of the item at the entered inventory position. -1 = ERR, 0 = Can't throw */
-        int throw_range(int pos) const;
         /** Execute a throw */
         dealt_projectile_attack throw_item( const tripoint &target, const item &thrown );
         /** Returns the throwing attack dexterity mod */
@@ -766,8 +764,13 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          */
         int item_handling_cost( const item& it, bool effects = true, int factor = VOLUME_MOVE_COST) const;
 
-        /** Calculate (but do not deduct) the number of moves required when reloading an item */
-        int item_reload_cost( const item& it, const item& ammo ) const;
+        /**
+         * Calculate (but do not deduct) the number of moves required to reload an item with specified quantity of ammo
+         * @param ammo either ammo or magazine to use when reloading the item
+         * @param qty maximum units of ammo to reload capped by remaining capacity. Defaults to remaining capacity
+         * (or 1 if RELOAD_ONE). Ignored if reloading using a magazine.
+         */
+        int item_reload_cost( const item& it, const item& ammo, long qty = -1 ) const;
 
         /** Wear item; returns false on fail. If interactive is false, don't alert the player or drain moves on completion. */
         bool wear(int pos, bool interactive = true);

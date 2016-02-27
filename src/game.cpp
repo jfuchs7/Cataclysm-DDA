@@ -7556,10 +7556,11 @@ void game::smash()
         return;
     }
 
-    for (auto it = m.i_at(smashp).begin(); it != m.i_at(smashp).end(); ++it) {
-        if ( it->is_corpse() && it->damage < CORPSE_PULP_THRESHOLD ) {
+    for( const auto &maybe_corpse : m.i_at( smashp ) ) {
+        if ( maybe_corpse.is_corpse() && maybe_corpse.damage < CORPSE_PULP_THRESHOLD &&
+             maybe_corpse.get_mtype()->has_flag( MF_REVIVES ) ) {
             // do activity forever. ACT_PULP stops itself
-            u.assign_activity(ACT_PULP, INT_MAX, 0);
+            u.assign_activity( ACT_PULP, INT_MAX, 0 );
             u.activity.placement = smashp;
             return; // don't smash terrain if we've smashed a corpse
         }
@@ -8581,9 +8582,11 @@ void game::handle_multi_item_info( const tripoint &lp, WINDOW *w_look, const int
             // items are displayed from the live view, don't do this here
             return;
         }
-        auto items = m.i_at( lp );
-        trim_and_print(w_look, line++, column, getmaxx(w_look) - 2, c_ltgray, _("There is a %s there."), items[0].tname().c_str());
-        if (items.size() > 1) {
+        const maptile &cur_maptile = g->m.maptile_at( lp );
+        const item &displayed_item = cur_maptile.get_uppermost_item();
+
+        trim_and_print(w_look, line++, column, getmaxx(w_look) - 2, c_ltgray, _("There is a %s there."), displayed_item.tname().c_str());
+        if (cur_maptile.get_item_count() > 1) {
             mvwprintw(w_look, line++, column, _("There are other items there as well."));
         }
     } else if (m.has_flag("CONTAINER", lp) && !m.could_see_items( lp, u)) {
@@ -9429,7 +9432,7 @@ void game::draw_trail_to_square( const tripoint &t, bool bDrawX )
 
     std::vector<tripoint> pts;
     tripoint center = u.pos() + u.view_offset;
-    if( t.x != 0 || t.y != 0 || t.z ) {
+    if( t != tripoint_zero ) {
         //Draw trail
         pts = line_to( u.pos(), u.pos() + t, 0, 0 );
     } else {
@@ -10802,7 +10805,8 @@ void game::plthrow(int pos)
         refresh_all();
     }
 
-    int range = u.throw_range(pos);
+    item thrown = u.i_at(pos);
+    int range = u.throw_range( thrown );
     if (range < 0) {
         add_msg(m_info, _("You don't have that item."));
         return;
@@ -10810,7 +10814,7 @@ void game::plthrow(int pos)
         add_msg(m_info, _("That is too heavy to throw."));
         return;
     }
-    item thrown = u.i_at(pos);
+
     if (pos == -1 && thrown.has_flag("NO_UNWIELD")) {
         // pos == -1 is the weapon, NO_UNWIELD is used for bio_claws_weapon
         add_msg(m_info, _("That's part of your body, you can't throw that!"));
@@ -11021,8 +11025,8 @@ void game::plfire( bool burst, const tripoint &default_target )
                 return; // menu cancelled
             }
 
-            reload_time += u.item_reload_cost( gun, *ammo );
-            if( !gun.reload( u, std::move( ammo ) ) ) {
+            reload_time += u.item_reload_cost( gun, *ammo, 1 );
+            if( !gun.reload( u, std::move( ammo ), 1 ) ) {
                 return; // unable to reload
             }
 
@@ -11074,7 +11078,7 @@ void game::plfire( bool burst, const tripoint &default_target )
 
     int range;
     if( reach_attack ) {
-        range = gun.has_flag( "REACH3" ) ? 3 : 2;
+        range = gun.reach_range();
     } else {
         range = gun.gun_range( &u );
     }
@@ -11524,11 +11528,14 @@ void game::reload( int pos )
             return; // not expected when player::rate_action_reload() == true
         }
 
-        int qty = std::max( !target->has_flag( "RELOAD_ONE" ) ? target->ammo_capacity() - target->ammo_remaining() : 1, 1L );
+        int qty = 1;// @todo pick_reload_ammo should return also target and qty
+        if( ammo.is_ammo() && !target->has_flag( "RELOAD_ONE") ) {
+            qty = std::min( ammo.charges, target->ammo_capacity() - target->ammo_remaining() );
+        }
 
         std::stringstream ss;
         ss << pos;
-        u.assign_activity( ACT_RELOAD, u.item_reload_cost( *target, ammo ), -1, loc.obtain( u, qty ), ss.str() );
+        u.assign_activity( ACT_RELOAD, u.item_reload_cost( *target, ammo, qty ), qty, loc.obtain( u, qty ), ss.str() );
         u.inv.restack( &u );
     }
 
@@ -11691,7 +11698,7 @@ void game::unload( item &it )
         }
 
         // If successful remove appropriate qty of ammo consuming half as much time as required to load it
-        u.moves -= u.item_reload_cost( *target, ammo ) / 2;
+        u.moves -= u.item_reload_cost( *target, ammo, qty ) / 2;
 
         if( target->ammo_type() == "plutonium" ) {
             qty *= PLUTONIUM_CHARGES;

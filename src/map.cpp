@@ -1,4 +1,4 @@
-﻿#include "map.h"
+#include "map.h"
 
 #include "drawing_primitives.h"
 #include "lightmap.h"
@@ -1226,6 +1226,7 @@ void map::board_vehicle( const tripoint &pos, player *p )
     }
     veh->parts[seat_part].set_flag(vehicle_part::passenger_flag);
     veh->parts[seat_part].passenger_id = p->getID();
+    veh->invalidate_mass();
 
     p->setpos( pos );
     p->in_vehicle = true;
@@ -1273,6 +1274,7 @@ void map::unboard_vehicle( const tripoint &p )
     passenger->controlling_vehicle = false;
     veh->parts[seat_part].remove_flag(vehicle_part::passenger_flag);
     veh->skidding = true;
+    veh->invalidate_mass();
 }
 
 void map::displace_vehicle( tripoint &p, const tripoint &dp )
@@ -3988,7 +3990,7 @@ void map::shoot( const tripoint &p, projectile &proj, const bool hit_items )
         add_field(p, fd_plasma, rng(1, 2), 0 );
     }
 
-    if (ammo_effects.count("LASER")) {
+    if (ammo_effects.count("LASER") || ammo_effects.count("DRAW_LASER_BEAM")) {
         add_field(p, fd_laser, 2, 0 );
     }
 
@@ -6047,9 +6049,9 @@ bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &
             hi = true;
         } else {
             // otherwise override with the symbol of the last item
-            sym = curr_maptile.get_last_item().symbol();
+            sym = curr_maptile.get_uppermost_item().symbol();
             if (!draw_item_sym) {
-                tercol = curr_maptile.get_last_item().color();
+                tercol = curr_maptile.get_uppermost_item().color();
             }
             if( curr_maptile.get_item_count() > 1 ) {
                 invert = !invert;

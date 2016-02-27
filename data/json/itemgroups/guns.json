@@ -5,11 +5,13 @@
     "//" : "Pistols commonly owned by citizens and found in many locations.",
     "items": [
       [ "glock_19", 85 ],
-      [ "m1911", 40 ],
+      [ "glock_22", 35 ],
+      [ "m1911", 50 ],
       [ "m9", 30 ],
       [ "ruger_lcr_38", 10 ],
       [ "sig_mosquito", 15 ],
       [ "sw_22", 15 ],
+      [ "sw_610", 20 ],
       [ "sw_619", 25 ]
     ]
   },
@@ -23,6 +25,7 @@
       [ "l_sp_45", 30 ],
       [ "l_sp_9mm", 60 ],
       [ "ruger_lcr_22", 30 ],
+      [ "sig_40", 30 ],
       [ "sig_p230", 40 ],
       [ "taurus_38", 30 ],
       [ "usp_45", 70 ],
@@ -100,6 +103,7 @@
     "id" : "guns_rifle_common",
     "//" : "Rifles commonly owned by citizens and found in many locations.",
     "items": [
+      [ "browning_blr", 25 ],
       [ "garand", 65 ],
       [ "ar15", 30 ],
       [ "cx4", 45 ],
@@ -118,17 +122,19 @@
     "id" : "guns_rifle_rare",
     "//" : "Less common rifles including those only used by police/paramilitary forces.",
     "items": [
-      [ "acr", 30 ],
-      [ "fn_fal", 30],
-      [ "hk_g3", 30 ],
+      [ "acr", 25 ],
+      [ "fn_fal", 40],
+      [ "hk_g3", 40 ],
       [ "l_base_223", 30 ],
       [ "l_car_223", 20 ],
       [ "l_dsr_223", 10 ],
       [ "m14ebr", 15 ],
-      [ "m4a1", 40 ],
+      [ "m4a1", 45 ],
+      [ "m1903", 15 ],
       [ "m1918", 30 ],
       [ "mosin44_ebr", 10 ],
       [ "mosin91_30_ebr", 20 ],
+      [ "remington_700", 20 ],
       [ "savage_111f", 15 ]
     ]
   },

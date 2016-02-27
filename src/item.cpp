@@ -2488,6 +2488,17 @@ int item::damage_by_type( damage_type dt ) const
     return 0;
 }
 
+int item::reach_range() const
+{
+    if( !has_flag( "REACH_ATTACK" ) ) {
+        return 1;
+    }
+    
+    return has_flag( "REACH3" ) ? 3 : 2;
+}
+
+
+
 void item::unset_flags()
 {
     item_tags.clear();
@@ -2929,23 +2940,22 @@ int item::bash_resist( bool to_self ) const
     static constexpr float stepness = -0.8f;
     static constexpr float center_of_S = 2.0f;
 
-    if (is_null()) {
+    if( is_null() ) {
         return resist;
     }
-    if (item::item_tags.count("leather_padded") > 0){
-
+    if( item_tags.count("leather_padded") > 0 ){
         l_padding = max_value / ( 1 + exp( stepness * ( get_thickness() - center_of_S )));
     }
-    if (item::item_tags.count("kevlar_padded") > 0){
+    if( item_tags.count("kevlar_padded") > 0 ){
         k_padding = max_value / ( 1 + exp( stepness * ( get_thickness() - center_of_S )));
     }
     std::vector<material_type*> mat_types = made_of_types();
     // Armor gets an additional multiplier.
-    if (is_armor()) {
+    if( is_armor() ) {
         // base resistance
         // Don't give reinforced items +armor, just more resistance to ripping
-        const int eff_damage = std::max( to_self ? -1 : 0, damage );
-        eff_thickness = ((get_thickness() - eff_damage <= 0) ? 1 : (get_thickness() - eff_damage));
+        const int eff_damage = to_self ? std::min( damage, 0 ) : std::max( damage, 0 );
+        eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
     for (auto mat : mat_types) {
@@ -2968,16 +2978,16 @@ int item::cut_resist( bool to_self ) const
     // previous versions. Adjust to make you happier/sadder.
     float adjustment = 1.5;
 
-    if (is_null()) {
+    if( is_null() ) {
         return resist;
     }
-    if (item::item_tags.count("leather_padded") > 0){
+    if( item_tags.count("leather_padded") > 0 ){
         static constexpr float max_value = 10.0f;
         static constexpr float stepness = -0.8f;
         static constexpr float center_of_S = 2.0f;
         l_padding = max_value / ( 1 + exp( stepness * ( get_thickness() - center_of_S )));
     }
-    if (item::item_tags.count("kevlar_padded") > 0){
+    if( item_tags.count("kevlar_padded") > 0 ){
         static constexpr float max_value = 15.0f;
         static constexpr float stepness = -0.5f;
         static constexpr float center_of_S = 2.0f;
@@ -2985,14 +2995,14 @@ int item::cut_resist( bool to_self ) const
     }
     std::vector<material_type*> mat_types = made_of_types();
     // Armor gets an additional multiplier.
-    if (is_armor()) {
+    if( is_armor() ) {
         // base resistance
         // Don't give reinforced items +armor, just more resistance to ripping
-        const int eff_damage = std::max( to_self ? -1 : 0, damage );
-        eff_thickness = ((get_thickness() - eff_damage <= 0) ? 1 : (get_thickness() - eff_damage));
+        const int eff_damage = to_self ? std::min( damage, 0 ) : std::max( damage, 0 );
+        eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
-    for (auto mat : mat_types) {
+    for( auto mat : mat_types ) {
         resist += mat->cut_resist();
     }
     // Average based on number of materials.
@@ -3079,10 +3089,6 @@ int item::chip_resistance( bool worst ) const
     if( res <= 0 ) {
         return 0;
     }
-
-    // An item's current state of damage can make it more susceptible to being damaged
-    // 10% less resistance for each point of damage
-    res = res * ( 10 - std::max<int>( 0, damage ) ) / 10;
 
     return res;
 }
@@ -4194,11 +4200,19 @@ bool item::can_reload( const itype_id& ammo ) const {
         return false;
 
     } else if( magazine_integral() ) {
-        if( !ammo.empty() && ammo_data() ) {
-            return ammo_data()->id == ammo;
-        } else {
-            return ammo_remaining() < ammo_capacity();
+        if( !ammo.empty() ) {
+            if( ammo_data() ) {
+                if( ammo_data()->id != ammo ) {
+                    return false;
+                }
+            } else {
+                auto at = item_controller->find_template( ammo );
+                if( !at->ammo || ammo_type() != at->ammo->type ) {
+                    return false;
+                }
+            }
         }
+        return ammo_remaining() < ammo_capacity();
 
     } else {
         return ammo.empty() ? true : magazine_compatible().count( ammo );
@@ -4207,7 +4221,13 @@ bool item::can_reload( const itype_id& ammo ) const {
 
 item_location item::pick_reload_ammo( player &u ) const
 {
-    std::vector<item_location> ammo_list;
+    using reloadable = struct {
+        const item *target;
+        item_location ammo;
+        long qty;
+        int moves;
+    };
+    std::vector<reloadable> ammo_list;
 
     auto opts = gunmods();
     opts.push_back( this );
@@ -4216,33 +4236,40 @@ item_location item::pick_reload_ammo( player &u ) const
             if( e->can_reload( ammo->is_ammo_container() ? ammo->contents[0].typeId() : ammo->typeId() ) ||
                 e->has_flag( "RELOAD_AND_SHOOT" ) ) {
 
-                ammo_list.push_back( std::move( ammo ) );
+                int qty = std::max( !e->has_flag( "RELOAD_ONE" ) ? e->ammo_capacity() - e->ammo_remaining() : 1, 1L );
+                int moves = ammo.obtain_cost( u, qty ) + u.item_reload_cost( *e, *ammo, qty );
+
+                ammo_list.emplace_back( reloadable { e, std::move( ammo ), qty, moves } );
             }
         }
     }
-
-    // Ensure ammo_list contains only valid dereferenceable locations
-    ammo_list.erase( std::remove( ammo_list.begin(), ammo_list.end(), item_location::nowhere ), ammo_list.end() );
 
     if( ammo_list.empty() ) {
         u.add_msg_if_player( m_info, _( "Out of %s!" ), is_gun() ? _("ammo") : ammo_name( ammo_type() ).c_str() );
         return item_location();
     }
 
-    std::sort( ammo_list.begin(), ammo_list.end(), []( const item_location& lhs, const item_location& rhs ) {
-        return rhs->ammo_remaining() < lhs->ammo_remaining();
+    // sort in order of move cost (ascending), then remaining ammo (descending) with empty magazines always last
+    std::stable_sort( ammo_list.begin(), ammo_list.end(), []( const reloadable& lhs, const reloadable& rhs ) {
+        return lhs.ammo->ammo_remaining() < rhs.ammo->ammo_remaining();
+    } );
+    std::stable_sort( ammo_list.begin(), ammo_list.end(), []( const reloadable& lhs, const reloadable& rhs ) {
+        return lhs.moves > rhs.moves;
+    } );
+    std::stable_sort( ammo_list.begin(), ammo_list.end(), []( const reloadable& lhs, const reloadable& rhs ) {
+        return ( lhs.ammo->ammo_remaining() != 0 ) > ( rhs.ammo->ammo_remaining() != 0 );
     } );
 
     if( ammo_list.size() == 1 ) {
         // Suppress display of reload prompt when...
         if( !is_gun() ) {
-            return std::move( ammo_list[ 0 ] ); // reloading tools
+            return std::move( ammo_list[ 0 ].ammo ); // reloading tools
 
         } else if( magazine_integral() && ammo_remaining() > 0 ) {
-            return std::move( ammo_list[ 0 ] ); // adding to partially filled integral magazines
+            return std::move( ammo_list[ 0 ].ammo ); // adding to partially filled integral magazines
 
-        } else if( has_flag( "RELOAD_AND_SHOOT" ) && u.has_item( *ammo_list[ 0 ] ) ) {
-            return std::move( ammo_list[ 0 ] ); // using bows etc and ammo is already in player possession
+        } else if( has_flag( "RELOAD_AND_SHOOT" ) && u.has_item( *ammo_list[ 0 ].ammo ) ) {
+            return std::move( ammo_list[ 0 ].ammo ); // using bows etc and ammo is already in player possession
         }
     }
 
@@ -4252,28 +4279,28 @@ item_location item::pick_reload_ammo( player &u ) const
 
     // Construct item names
     std::vector<std::string> names;
-    std::transform( ammo_list.begin(), ammo_list.end(), std::back_inserter( names ), [&u]( item_location& e ) {
-        if( e->is_magazine() && e->ammo_data() ) {
+    std::transform( ammo_list.begin(), ammo_list.end(), std::back_inserter( names ), [&u]( const reloadable& e ) {
+        if( e.ammo->is_magazine() && e.ammo->ammo_data() ) {
             //~ magazine with ammo (count)
-            return string_format( _( "%s with %s (%d)" ), e->type->nname( 1 ).c_str(),
-                                  e->ammo_data()->nname( e->ammo_remaining() ).c_str(), e->ammo_remaining() );
+            return string_format( _( "%s with %s (%d)" ), e.ammo->type_name().c_str(),
+                                  e.ammo->ammo_data()->nname( e.ammo->ammo_remaining() ).c_str(), e.ammo->ammo_remaining() );
 
-        } else if( e->is_ammo_container() && u.is_worn( *e ) ) {
+        } else if( e.ammo->is_ammo_container() && u.is_worn( *e.ammo ) ) {
             // worn ammo containers should be named by their contents with their location also updated below
-            return e->contents[0].display_name();
+            return e.ammo->contents[ 0 ].display_name();
 
         } else {
-            return e->display_name();
+            return e.ammo->display_name();
         }
     } );
 
     // Get location descriptions
     std::vector<std::string> where;
-    std::transform( ammo_list.begin(), ammo_list.end(), std::back_inserter( where ), [&u]( item_location& e ) {
-        if( e->is_ammo_container() && u.is_worn( *e ) ) {
-            return e->type_name();
+    std::transform( ammo_list.begin(), ammo_list.end(), std::back_inserter( where ), [&u]( const reloadable& e ) {
+        if( e.ammo->is_ammo_container() && u.is_worn( *e.ammo ) ) {
+            return e.ammo->type_name();
         }
-        return e.describe( &g->u );
+        return e.ammo.describe( &g->u );
     } );
 
     // Pads elements to match longest member and return length
@@ -4299,10 +4326,13 @@ item_location item::pick_reload_ammo( player &u ) const
     menu.text += std::string( w + 3 - utf8_width( _( "| Location " ) ), ' ' );
     menu.w_width += w + 3;
 
+    menu.text += _( "| Moves   " );
+    menu.w_width += 10;
+
     // We only show ammo statistics for guns and magazines
     if( is_gun() || is_magazine() ) {
-        menu.text += _( "| Damage  | Pierce  | Range   | Accuracy" );
-        menu.w_width += 40;
+        menu.text += _( "| Damage  | Pierce  " );
+        menu.w_width += 20;
     }
 
     menu.w_width += 6; // include space for borders
@@ -4314,27 +4344,34 @@ item_location item::pick_reload_ammo( player &u ) const
     itype_id last = uistate.lastreload[ ammo_type() ];
 
     for( auto i = 0; i != (int) ammo_list.size(); ++i ) {
-        const item& ammo = ammo_list[ i ]->is_ammo_container() ? ammo_list[ i ]->contents[ 0 ] : *ammo_list[ i ];
+        const item& ammo = ammo_list[ i ].ammo->is_ammo_container() ? ammo_list[ i ].ammo->contents[ 0 ] : *ammo_list[ i ].ammo;
 
-        std::string row = names[i] + "| " + where[i] + " ";
+        std::string row = string_format( "%s| %s | %-7d ", names[ i ].c_str(), where[ i ].c_str(), ammo_list[ i ].moves );
 
         if( is_gun() || is_magazine() ) {
             const itype *curammo = ammo.ammo_data(); // nullptr for empty magazines
             if( curammo ) {
-                row += string_format( "| %-7d | %-7d | %-7d | %-7d",
-                                      curammo->ammo->damage, curammo->ammo->pierce,
-                                      curammo->ammo->range, 100 - curammo->ammo->dispersion );
+                row += string_format( "| %-7d | %-7d", curammo->ammo->damage, curammo->ammo->pierce );
             } else {
-                row += "|         |         |         |         ";
+                row += "|         |         ";
             }
         }
 
         char hotkey = -1;
-        if( u.has_item( ammo ) && ( ammo.invlet || ammo_list[ i ]->invlet ) ) {
+        if( u.has_item( ammo ) ) {
             // if ammo in player possession and either it or any container has a valid invlet use this
-            hotkey = ammo.invlet ? ammo.invlet : ammo_list[ i ]->invlet;
-
-        } else if( last == ammo.typeId() ) {
+            if( ammo.invlet ) {
+                hotkey = ammo.invlet;
+            } else {
+                for( const auto obj : u.parents( ammo ) ) {
+                    if( obj->invlet ) {
+                        hotkey = obj->invlet;
+                        break;
+                    }
+                }
+            }
+        }
+        if( hotkey == -1 && last == ammo.typeId() ) {
             // if this is the first occurrence of the most recently used type of ammo and the hotkey
             // was not already set above then set it to the keypress that opened this prompt
             hotkey = inp_mngr.get_previously_pressed_key();
@@ -4350,7 +4387,7 @@ item_location item::pick_reload_ammo( player &u ) const
         return item_location();
     }
 
-    item_location sel = std::move( ammo_list[ menu.ret ] );
+    item_location sel = std::move( ammo_list[ menu.ret ].ammo );
     uistate.lastreload[ ammo_type() ] = sel->is_ammo_container() ? sel->contents[ 0 ].typeId() : sel->typeId();
     return sel;
 }
@@ -4377,15 +4414,10 @@ static void eject_casings( player &p, item& target )
     target.erase_var( "CASINGS" );
 }
 
-bool item::reload( player &u, int pos )
-{
-    return reload( u, item_location( u, &u.i_at( pos ) ) );
-}
-
-bool item::reload( player &u, item_location loc )
+bool item::reload( player &u, item_location loc, long qty )
 {
     item *ammo = loc.get_item();
-    if( ammo == nullptr || ammo->is_null() ) {
+    if( ammo == nullptr || ammo->is_null() || qty <= 0 ) {
         debugmsg( "Tried to reload using non-existent ammo" );
         return false;
     }
@@ -4411,7 +4443,6 @@ bool item::reload( player &u, item_location loc )
     }
 
     // First determine what we are trying to reload
-    long qty = 0;
     item *target = nullptr;
 
     if( is_gun() ) {
@@ -4428,7 +4459,7 @@ bool item::reload( player &u, item_location loc )
                         (!e->ammo_remaining() || e->ammo_current() == ammo->typeId()) &&
                         e->ammo_remaining() < e->ammo_capacity() ) {
 
-                        qty = e->has_flag( "RELOAD_ONE" ) ? 1 : e->ammo_capacity() - e->ammo_remaining();
+                        qty = std::min( qty, e->has_flag( "RELOAD_ONE" ) ? 1 : e->ammo_capacity() - e->ammo_remaining() );
                         target = e;
                         break;
                     }
@@ -4439,7 +4470,7 @@ bool item::reload( player &u, item_location loc )
             }
         }
     } else if( is_tool() || is_magazine() ) {
-        qty = ammo_capacity() - ammo_remaining();
+        qty = std::min( qty, ammo_capacity() - ammo_remaining() );
         if( ammo_type() == ammo->ammo_type() && qty > 0 ) {
             target = this;
         }
