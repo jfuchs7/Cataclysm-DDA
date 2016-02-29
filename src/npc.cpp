@@ -1,7 +1,6 @@
-#include <fstream>
-#include <sstream>
-
 #include "npc.h"
+
+#include "coordinate_conversions.h"
 #include "rng.h"
 #include "map.h"
 #include "game.h"
@@ -24,6 +23,8 @@
 #include "iuse_actor.h"
 
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #define NPC_LOW_VALUE       5
@@ -954,7 +955,7 @@ void npc::spawn_at(int x, int y, int z)
     position.x = rng(0, SEEX - 1);
     position.y = rng(0, SEEY - 1);
     position.z = z;
-    const point pos_om = overmapbuffer::sm_to_om_copy( mapx, mapy );
+    const point pos_om = sm_to_om_copy( mapx, mapy );
     overmap &om = overmap_buffer.get( pos_om.x, pos_om.y );
     om.npcs.push_back(this);
 }
@@ -1128,6 +1129,7 @@ bool npc::wear_if_wanted( const item &it )
     }
 
     bool encumb_ok = true;
+    const auto new_enc = get_encumbrance( it );
     do {
         // Strip until we can put the new item on
         // This is one of the reasons this command is not used by the AI
@@ -1142,10 +1144,7 @@ bool npc::wear_if_wanted( const item &it )
                 return false;
             }
 
-            double layers = 0;
-            int armor_enc = 0;
-            int enc = encumb( bp, layers, armor_enc, it );
-            if( enc > max_encumb[i] ) {
+            if( new_enc[i].encumbrance > max_encumb[i] ) {
                 encumb_ok = false;
                 break;
             }
@@ -2222,10 +2221,10 @@ void npc::shift(int sx, int sy)
 
     position.x -= shiftx;
     position.y -= shifty;
-    const point pos_om_old = overmapbuffer::sm_to_om_copy( mapx, mapy );
+    const point pos_om_old = sm_to_om_copy( mapx, mapy );
     mapx += sx;
     mapy += sy;
-    const point pos_om_new = overmapbuffer::sm_to_om_copy( mapx, mapy );
+    const point pos_om_new = sm_to_om_copy( mapx, mapy );
     if( pos_om_old != pos_om_new ) {
         overmap &om_old = overmap_buffer.get( pos_om_old.x, pos_om_old.y );
         overmap &om_new = overmap_buffer.get( pos_om_new.x, pos_om_new.y );

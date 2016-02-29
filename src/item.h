@@ -111,8 +111,8 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
         item &operator=( const item & ) = default;
         virtual ~item() = default;
 
-        item( const itype_id& id, int turn, int qty = -1 );
-        item( const itype *type, int turn, int qty = -1 );
+        explicit item( const itype_id& id, int turn = -1, int qty = -1 );
+        explicit item( const itype *type, int turn = -1, int qty = -1 );
 
         struct default_charges_tag {};
         item( const itype_id& id, int turn, default_charges_tag );
@@ -126,6 +126,15 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
          * @return same instance to allow method chaining
          */
         item& convert( const itype_id& new_type );
+
+        /**
+         * Filter converting this instance to the inactive type
+         * If the item is either inactive or cannot be deactivated is a no-op
+         * @param ch character currently possessing or acting upon the item (if any)
+         * @param alert whether to display any messages
+         * @return same instance to allow method chaining
+         */
+        item& deactivate( const Character *ch = nullptr, bool alert = true );
 
         /**
          * Splits a count-by-charges item always leaving source item with minimum of 1 charge
@@ -228,17 +237,28 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      */
     bool can_reload( const itype_id& ammo = std::string() ) const;
 
+    struct reload_option {
+        const item *target = nullptr;
+        item_location ammo;
+        long qty = 0;
+        int moves = 0;
+
+        operator bool() const {
+            return target && ammo && qty > 0;
+        }
+    };
+
     /**
      * Select suitable ammo with which to reload the item
      * @param u player inventory to search for suitable ammo.
      */
-    item_location pick_reload_ammo( player &u ) const;
+    reload_option pick_reload_ammo( player &u ) const;
 
     /**
      * Reload item using ammo from location returning true if sucessful
-     * @param qty if specified caps reloading to this (or fewer) units
+     * @param qty caps reloading to this (or fewer) units
      */
-    bool reload( player &u, item_location loc, long qty = -1 );
+    bool reload( player &u, item_location loc, long qty );
 
     template<typename Archive>
     void io( Archive& );
@@ -416,6 +436,14 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      * Puts the given item into this one, no checks are performed.
      */
     void put_in( item payload );
+
+    /** Stores a newly constructed item at the end of this item's contents */
+    template<typename ... Args>
+    item& emplace_back( Args&&... args ) {
+        contents.emplace_back( std::forward<Args>( args )... );
+        return contents.back();
+    }
+
     /**
      * Returns this item into its default container. If it does not have a default container,
      * returns this. It's intended to be used like \code newitem = newitem.in_its_container();\endcode
@@ -709,18 +737,6 @@ public:
          *  @param ignore only check item is compatible and ignore any existing contents */
         bool can_holster ( const item& obj, bool ignore = false ) const;
 
-        /**
-         * Returns @ref curammo, the ammo that is currently load in this item.
-         * May return a null pointer.
-         * If non-null, the returned itype is quaranted to have an ammo slot:
-         * @code itm.get_curammo()->ammo->damage @endcode will work.
-         */
-        const itype* get_curammo() const;
-        /**
-         * Whether the item is currently loaded (which implies it has some non-null pointer
-         * as @ref curammo).
-         */
-        bool has_curammo() const;
         /**
          * Sets the current ammo to nullptr. Note that it does not touch the charges or anything else.
          */
@@ -1097,6 +1113,12 @@ public:
          *  @param conversion whether to include the effect of any flags or mods which convert the type
          *  @return NULL if item does not use a specific ammo type (and is consequently not reloadable) */
         ammotype ammo_type( bool conversion = true ) const;
+
+        /** Get ammo effects for item optionally inclusive of any resulting from the loaded ammo */
+        std::set<std::string> ammo_effects( bool with_ammo = true ) const;
+
+        /** Returns casing type ejected by item (if any) which is always "null" if item is not a gun */
+        itype_id ammo_casing() const;
 
         /** Does item have an integral magazine (as opposed to allowing detachable magazines) */
         bool magazine_integral() const;
