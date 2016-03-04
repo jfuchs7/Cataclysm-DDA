@@ -19,6 +19,7 @@
 #include "options.h"
 #include "time.h"
 #include "mapdata.h"
+#include "itype.h"
 #include <chrono>
 #ifdef SDL_SOUND
 #   include <SDL_mixer.h>
@@ -572,9 +573,12 @@ void sfx::generate_gun_sound( const player &p, const item &firing )
         angle = 0;
         distance = 0;
         selected_sound = "fire_gun";
-        if( firing.has_gunmod( "suppressor" ) == 1 || firing.has_gunmod( "homemade suppressor" ) == 1 ) {
+
+        const auto mods = firing.gunmods();
+        if( std::any_of( mods.begin(), mods.end(), []( const item *e ) { return e->type->gunmod->loudness < 0; } ) ) {
             weapon_id = "weapon_fire_suppressed";
         }
+
     } else {
         angle = get_heard_angle( source );
         distance = rl_dist( g->u.pos(), source );

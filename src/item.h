@@ -114,9 +114,15 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
         explicit item( const itype_id& id, int turn = -1, int qty = -1 );
         explicit item( const itype *type, int turn = -1, int qty = -1 );
 
+        /** Suppress randomisation and always start with default quantity of charges */
         struct default_charges_tag {};
         item( const itype_id& id, int turn, default_charges_tag );
         item( const itype *type, int turn, default_charges_tag );
+
+        /** Default (or randomised) charges except if counted by charges then only one charge */
+        struct solitary_tag {};
+        item( const itype_id& id, int turn, solitary_tag );
+        item( const itype *type, int turn, solitary_tag );
 
         item( JsonObject &jo );
 
@@ -135,6 +141,22 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
          * @return same instance to allow method chaining
          */
         item& deactivate( const Character *ch = nullptr, bool alert = true );
+
+        /**
+         * Filter setting the ammo for this instance
+         * Any existing ammo is removed. If necessary a default magazine is also added.
+         * @param ammo specific type of ammo (must be compatible with item ammo type)
+         * @param qty maximum ammo (capped by item capacity) or negative to fill to capacity
+         * @return same instance to allow method chaining
+         */
+        item& ammo_set( const itype_id& ammo, long qty = -1 );
+
+        /**
+         * Filter removing all ammo from this instance
+         * If the item is neither a tool, gun nor magazine is a no-op
+         * For items reloading using magazines any empty magazine remains present.
+         */
+        item& ammo_unset();
 
         /**
          * Splits a count-by-charges item always leaving source item with minimum of 1 charge
@@ -464,7 +486,6 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
     bool has_quality( std::string quality_id, int quality_value ) const;
     bool count_by_charges() const;
     bool craft_has_charges();
-    long num_charges();
 
     /**
      * Reduce the charges of this item, only use for items counted by charges!
@@ -702,6 +723,13 @@ public:
  bool is_software() const;
  bool is_var_veh_part() const;
  bool is_artifact() const;
+
+        /**
+         * Is it ever possible to reload this item?
+         * Only the base item is considered with any mods ignored
+         * @see item::can_reload() to check current state of base item
+         */
+        bool is_reloadable() const;
 
         bool is_dangerous() const; // Is it an active grenade or something similar that will hurt us?
 
@@ -1150,6 +1178,18 @@ public:
         std::vector<item *> gunmods();
         std::vector<const item *> gunmods() const;
 
+        /** Get first attached gunmod matching type or nullptr if no such mod or item is not a gun */
+        item * gunmod_find( const itype_id& mod );
+        const item * gunmod_find( const itype_id& mod ) const;
+
+        /**
+         * Returns currently active auxiliary (@ref is_auxiliary_gunmod) gun mod item.
+         * May return null if there is no such gun mod or if the gun is not in the
+         * auxiliary mode (@ref is_in_auxiliary_mode).
+         */
+        item * gunmod_current();
+        item const * gunmod_current() const;
+
         /*
          * Checks if mod can be applied to this item considering any current state (jammed, loaded etc.)
          * @param alert whether to display message describing reason for any incompatibility
@@ -1243,19 +1283,6 @@ public:
         /** Get the type of a ranged weapon (eg. "rifle", "crossbow"), or empty string if non-gun */
         std::string gun_type() const;
 
-        /**
-         * Returns the currently active auxiliary (@ref is_auxiliary_gunmod) gun mod item.
-         * May return null if there is no such gun mod or if the gun is not in the
-         * auxiliary mode (@ref is_in_auxiliary_mode).
-         */
-        item* active_gunmod();
-        item const* active_gunmod() const;
-        /**
-         * Returns the index of a gunmod item of the given type. The actual gunmod item is in
-         * the @ref contents vector, the returned index point into that vector.
-         * Returns -1 if this is not a gun, or if it has no such gunmod.
-         */
-        int has_gunmod( const itype_id& type ) const;
         /**
          * Number of mods that can still be installed into the given mod location,
          * for non-guns it always returns 0.

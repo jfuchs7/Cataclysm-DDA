@@ -380,7 +380,7 @@ int player::fire_gun( const tripoint &target, int shots, item& gun )
     }
 
     // Number of shots to fire is limited by the ammount of remaining ammo
-    if( !gun.has_flag( "NO_AMMO" ) && !is_charger_gun ) {
+    if( gun.ammo_required() && !is_charger_gun ) {
         shots = std::min( shots, int( gun.ammo_remaining() / gun.ammo_required() ) );
     }
 
@@ -714,12 +714,11 @@ static int draw_targeting_window( WINDOW *w_target, item *relevant, player &p, t
     } else {
         if( mode == TARGET_MODE_FIRE ) {
             if( relevant->has_flag( "RELOAD_AND_SHOOT" ) && relevant->ammo_data() ) {
-                title = string_format( _("Shooting %1$s from %2$s"),
-                        p.weapon.ammo_data()->nname(1).c_str(), p.weapon.tname().c_str());
-            } else if( relevant->has_flag("NO_AMMO") ) {
-                title = string_format( _("Firing %s"), p.weapon.tname().c_str());
+                title = string_format( _( "Shooting %1$s from %2$s" ),
+                        relevant->ammo_data()->nname( relevant->ammo_required() ).c_str(),
+                        relevant->tname().c_str() );
             } else {
-                title = string_format( _("Firing %s"), p.print_gun_mode().c_str() );
+                title = string_format( _( "Firing %s" ), relevant->tname().c_str() );
             }
             title += " ";
             title += p.print_recoil();
@@ -999,7 +998,7 @@ std::vector<tripoint> game::target( tripoint &p, const tripoint &low, const trip
                 if( u.weapon.get_gun_mode() == "MODE_BURST" ) {
                     mode = _("Burst");
                 } else {
-                    item *gunmod = u.weapon.active_gunmod();
+                    item *gunmod = u.weapon.gunmod_current();
                     if( gunmod != NULL ) {
                         mode = gunmod->type_name();
                     }
@@ -1303,7 +1302,7 @@ static inline void eject_casing( player& p, item& weap ) {
         return;
     }
 
-    if( weap.has_gunmod( "brass_catcher" ) != -1 ) {
+    if( weap.gunmod_find( "brass_catcher" ) ) {
         p.i_add( item( weap.ammo_casing(), calendar::turn, 1 ) );
         return;
     }
@@ -1397,7 +1396,7 @@ static int rand_or_max( bool random, int max )
 double player::get_weapon_dispersion( const item *weapon, bool random ) const
 {
     if( weapon->is_gun() && weapon->is_in_auxiliary_mode() ) {
-        const auto gunmod = weapon->active_gunmod();
+        const auto gunmod = weapon->gunmod_current();
         if( gunmod != nullptr ) {
             return get_weapon_dispersion( gunmod, random );
         }

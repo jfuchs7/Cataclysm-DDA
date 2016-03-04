@@ -4418,7 +4418,7 @@ void game::debug()
             wrefresh( w_terrain );
             getch();
 #else
-            popup( "This binary was not compiled with tiles support." );
+            popup( _( "This binary was not compiled with tiles support." ) );
 #endif
         }
         break;
@@ -6476,9 +6476,12 @@ void game::do_blast( const tripoint &p, const float power,
 }
 
 
-void game::explosion( const tripoint &p, float power, float factor,
-                      int shrapnel_count, bool fire )
+std::unordered_map<tripoint,std::pair<int,int>> game::explosion( const tripoint &p, float power, float factor,
+                                                       bool fire, int shrapnel_count, int shrapnel_mass )
 {
+    // contains all tiles considered plus sum of damage received by each from shockwave and/or shrapnel
+    std::unordered_map<tripoint,std::pair<int,int>> distrib;
+
     const int noise = power * (fire ? 2 : 10);
     if( noise >= 30 ) {
         sounds::sound( p, noise, _("a huge explosion!") );
@@ -6494,60 +6497,101 @@ void game::explosion( const tripoint &p, float power, float factor,
     if( factor >= 1.0f ) {
         debugmsg( "called game::explosion with factor >= 1.0 (infinite size)" );
     } else if( factor > 0.0f ) {
+        // @todo return map containing distribution of damage
         do_blast( p, power, factor, fire );
     }
 
     if( shrapnel_count > 0 ) {
-        const int radius = 2 * int(sqrt(double(power / 4)));
-        shrapnel( p, power * 2, shrapnel_count, radius );
+        int shrapnel_power = ( log( power ) + 1 ) * shrapnel_mass;
+        auto res = shrapnel( p, shrapnel_power, shrapnel_count, shrapnel_mass );
+        for( const auto& e : res ) {
+            if( distrib.count( e.first ) ) {
+                // if tile was already affected by blast just update the shrapnel field
+                distrib[ e.first ].second = e.second;
+            } else {
+                // otherwise add the tile but mark is as unaffected by the blast (-1)
+                distrib[ e.first ] = std::make_pair( -1, e.second );
+            }
+        }
     }
+
+    return distrib;
 }
 
-void game::shrapnel( const tripoint &p, int power, int count, int radius )
+std::unordered_map<tripoint,int> game::shrapnel( const tripoint &src, int power, int count, int mass, int range )
 {
-    if( power <= 0 ) {
-        return;
+    if( range < 0 ) {
+        range = std::max( ( 2 * log( power / 2  ) ) + 2, 0.0 );
     }
 
-    if( radius < 0 ) {
-        return;
-    }
+    // contains of all tiles considered with value being sum of damage received (if any)
+    std::unordered_map<tripoint,int> distrib;
 
-    npc fake_npc;
-    fake_npc.name = _("Shrapnel");
-    fake_npc.set_fake(true);
-    fake_npc.setpos( p );
     projectile proj;
-    proj.speed = 100;
-    proj.range = radius;
-    proj.proj_effects.insert( "DRAW_AS_LINE" );
+    proj.speed = 1000; // no dodging shrapnel
+    proj.range = range;
     proj.proj_effects.insert( "NULL_SOURCE" );
-    for( int i = 0; i < count; i++ ) {
-        // TODO: Z-level shrapnel, but not before z-level ranged attacks
-        tripoint sp{ static_cast<int> (rng( p.x - radius, p.x + radius )),
-                     static_cast<int> (rng( p.y - radius, p.y + radius )),
-                     p.z };
+    proj.proj_effects.insert( "WIDE" ); // suppress MF_HARDTOSHOOT
 
-        proj.impact = damage_instance::physical( power, power, 0, 0 );
+    auto func = [this,&distrib,&mass,&proj]( const tripoint& e, int& kinetic ) {
+        distrib[ e ] += 0; // add this tile to the distribution
 
-        Creature *critter_in_center = critter_at( p ); // Very unfortunate critter
-        if( critter_in_center != nullptr ) {
-            dealt_projectile_attack dda; // Cool variable name
-            dda.proj = proj;
-            // For first shrapnel piece:
-            // 50% chance for 50%-100% base (power to 2 * power)
-            // 50% chance for 0-25% base
-            // Each one after that gets a progressively lower chance of hitting
-            dda.missed_by = rng_float( 0.4, 1.0 ) + (i * 1.0 / count);
-            critter_in_center->deal_projectile_attack( nullptr, dda );
+        auto critter = critter_at( e );
+        if( critter && !critter->is_dead_state() ) {
+            dealt_projectile_attack frag;
+            frag.proj = proj;
+            frag.missed_by = rng_float( 0.2, 0.6 );
+            frag.proj.impact = damage_instance::physical( 0, kinetic * 3, 0, std::min( kinetic, mass ) );
+
+            distrib[ e ] += kinetic; // increase received damage for tile in distribution
+
+            critter->deal_projectile_attack( nullptr, frag );
+            return false;
         }
 
-        if( sp != p ) {
-            // This needs to be high enough to prevent game from thinking that
-            //  the fake npc is scoring headshots.
-            fake_npc.projectile_attack( proj, sp, 3600 );
+        if( m.impassable( e ) ) {
+            // massive shrapnel can smash a path through obstacles
+            int force = std::min( kinetic, mass );
+            int resistance;
+
+            int vpart;
+            vehicle *veh = m.veh_at( e, vpart );
+            if( veh != nullptr && vpart >= 0 ) {
+                resistance = force - veh->damage( vpart, force );
+
+            } else {
+                resistance = std::max( m.bash_resistance( e ), 0 );
+                m.bash( e, force, true );
+            }
+
+            if( m.passable( e ) ) {
+                distrib[ e ] += resistance; // obstacle absorbed only some of the force
+                kinetic -= resistance;
+            } else {
+                distrib[ e ] += kinetic; // obstacle absorbed all of the force
+                return false;
+            }
         }
+
+        // @todo apply effects of soft cover
+        return kinetic > 0;
+    };
+
+    for( auto i = 0; i != count; ++i ) {
+        int kinetic = power;
+
+        // special case critter at epicenter to have equivalent chance to adjacent tile
+        if( one_in( 8 ) && !func( src, kinetic ) ) {
+            continue;
+        }
+
+        // shrapnel otherwise expands randomly in all directions
+        bresenham( src, m.random_perimeter( src, range ), 0, 0, [&func,&kinetic]( const tripoint& e ) {
+            return func( e, kinetic );
+        } );
     }
+
+    return distrib;
 }
 
 void game::flashbang( const tripoint &p, bool player_immune)
@@ -10958,7 +11002,7 @@ void game::plfire( bool burst, const tripoint &default_target )
 
                 actions.push_back( [&]{ u.invoke_item( &w, "holster" ); } );
 
-            } else if( w.is_gun() && w.has_gunmod( "shoulder_strap" ) >= 0 ) {
+            } else if( w.is_gun() && w.gunmod_find( "shoulder_strap" ) ) {
                 // wield item currently worn using shoulder strap
                 options.push_back( w.display_name() );
                 actions.push_back( [&]{ u.wield( w ); } );
@@ -10975,7 +11019,7 @@ void game::plfire( bool burst, const tripoint &default_target )
         return;
     }
 
-    item& gun = u.weapon.active_gunmod() ? *u.weapon.active_gunmod() : u.weapon;
+    item& gun = u.weapon.gunmod_current() ? *u.weapon.gunmod_current() : u.weapon;
 
     if( !gun.is_gun() && !gun.has_flag( "REACH_ATTACK" ) ) {
         return;
@@ -11480,7 +11524,7 @@ void game::reload( int pos )
 
     // bows etc do not need to reload.
     if( it->has_flag( "RELOAD_AND_SHOOT" ) ) {
-        add_msg( m_info, _( "Your %s does not need to be reloaded, it reloads and fires in a single motion." ),
+        add_msg( m_info, _( "The %s does not need to be reloaded, it reloads and fires in a single motion." ),
                  it->tname().c_str() );
         return;
     }
@@ -11492,8 +11536,10 @@ void game::reload( int pos )
 
     switch( u.rate_action_reload( *it ) ) {
         case HINT_IFFY:
-            add_msg( m_info, _( "Your %s is already fully loaded!" ), it->tname().c_str() );
-            return;
+            if( it->ammo_remaining() > 0 && it->ammo_remaining() == it->ammo_capacity() ) {
+                add_msg( m_info, _( "The %s is already fully loaded!" ), it->tname().c_str() );
+                return;
+            } // intentional fall-through
 
         case HINT_CANT:
             add_msg( m_info, _( "You can't reload a %s!." ), it->tname().c_str() );

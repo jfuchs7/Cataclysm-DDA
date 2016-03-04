@@ -3522,7 +3522,7 @@ int player::print_aim_bars( WINDOW *w, int line_number, item *weapon, Creature *
 std::string player::print_gun_mode() const
 {
     // Print current weapon, or attachment if active.
-    const item* gunmod = weapon.active_gunmod();
+    const item* gunmod = weapon.gunmod_current();
     std::stringstream attachment;
     if (gunmod != NULL) {
         attachment << gunmod->type_name().c_str();
@@ -10641,7 +10641,11 @@ hint_rating player::rate_action_reload( const item &it ) const
         }
     }
 
-    return it.can_reload() ? HINT_GOOD : res;
+    if( !it.is_reloadable() ) {
+        return res;
+    }
+
+    return it.can_reload() ? HINT_GOOD : HINT_IFFY;
 }
 
 hint_rating player::rate_action_unload( const item &it ) const
