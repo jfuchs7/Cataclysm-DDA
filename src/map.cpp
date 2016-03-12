@@ -370,7 +370,9 @@ void map::vehmove()
         }
     }
     // Process item removal on the vehicles that were modified this turn.
-    for( const auto &elem : dirty_vehicle_list ) {
+    // Use a copy because part_removal_cleanup can modify the container.
+    auto temp = dirty_vehicle_list;
+    for( const auto &elem : temp ) {
         ( elem )->part_removal_cleanup();
     }
     dirty_vehicle_list.clear();
@@ -4539,8 +4541,6 @@ void map::spawn_natural_artifact(const tripoint &p, artifact_natural_property pr
     add_item_or_charges( p, item( new_natural_artifact( prop ), 0 ) );
 }
 
-//New spawn_item method, using item factory
-// added argument to spawn at various damage levels
 void map::spawn_item(const tripoint &p, const std::string &type_id,
                      const unsigned quantity, const long charges,
                      const unsigned birthday, const int damlevel)
@@ -4553,8 +4553,7 @@ void map::spawn_item(const tripoint &p, const std::string &type_id,
         return;
     }
     // recurse to spawn (quantity - 1) items
-    for( size_t i = 1; i < quantity; i++ )
-    {
+    for( size_t i = 1; i < quantity; i++ ) {
         spawn_item( p, type_id, 1, charges, birthday, damlevel );
     }
     // spawn the item
@@ -6875,6 +6874,52 @@ void map::restock_fruits( const tripoint &p, int time_since_last_actualize )
     }
 }
 
+void map::rad_scorch( const tripoint &p, int time_since_last_actualize )
+{
+    const int rads = get_radiation( p );
+    if( rads == 0 ) {
+        return;
+    }
+
+    // TODO: More interesting rad scorch chance - base on season length?
+    if( !x_in_y( 1.0 * rads * rads * time_since_last_actualize, DAYS(91) ) ) {
+        return;
+    }
+
+    // First destroy the farmable plants (those are furniture)
+    // TODO: Rad-resistant mutant plants (that produce radioactive fruit)
+    const furn_t &fid = furn_at( p );
+    if( fid.has_flag( "PLANT" ) ) {
+        i_clear( p );
+        furn_set( p, f_null );
+    }
+
+    const ter_id tid = ter( p );
+    // TODO: De-hardcode this
+    static const std::map<ter_id, std::string> dies_into {{
+        {t_grass, "t_dirt"},
+        {t_tree_young, "t_dirt"},
+        {t_tree_pine, "t_tree_deadpine"},
+        {t_tree_birch, "t_tree_birch_harvested"},
+        {t_tree_willow, "t_tree_willow_harvested"},
+        {t_tree_hickory, "t_tree_hickory_dead"},
+        {t_tree_hickory_harvested, "t_tree_hickory_dead"},
+    }};
+
+    const auto iter = dies_into.find( tid );
+    if( iter != dies_into.end() ) {
+        ter_set( p, iter->second );
+        return;
+    }
+
+    const ter_t &tr = tid.obj();
+    if( tr.has_flag( "SHRUB" ) ) {
+        ter_set( p, t_dirt );
+    } else if( tr.has_flag( "TREE" ) ) {
+        ter_set( p, "t_tree_dead" );
+    }
+}
+
 void map::actualize( const int gridx, const int gridy, const int gridz )
 {
     submap *const tmpsub = get_submap_at_grid( gridx, gridy, gridz );
@@ -6913,6 +6958,8 @@ void map::actualize( const int gridx, const int gridy, const int gridz )
             grow_plant( pnt );
 
             restock_fruits( pnt, time_since_last_actualize );
+
+            rad_scorch( pnt, time_since_last_actualize );
         }
     }
 

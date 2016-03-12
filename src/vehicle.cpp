@@ -5047,46 +5047,42 @@ void vehicle::place_spawn_items()
     if( !type.is_valid() ) {
         return;
     }
-    for( auto &spawn : type.obj().item_spawns ) {
-        const vehicle_item_spawn *next_spawn = &spawn;
-        if(rng(1, 100) <= next_spawn->chance) {
-            //Find the cargo part in that square
-            int part = part_with_feature_at_relative(next_spawn->pos, "CARGO", false);
-            if(part < 0) {
-                debugmsg("No CARGO parts at (%d, %d) of %s!",
-                        next_spawn->pos.x, next_spawn->pos.y, name.c_str());
+
+    for( const auto& spawn : type.obj().item_spawns ) {
+        if( rng( 1, 100 ) <= spawn.chance ) {
+            int part = part_with_feature_at_relative( spawn.pos, "CARGO", false );
+            if( part < 0 ) {
+                debugmsg( "No CARGO parts at (%d, %d) of %s!", spawn.pos.x, spawn.pos.y, name.c_str() );
+
             } else {
-                bool partbroken = ( parts[part].hp < 1 );
-                int idmg = 0;
-                for( auto &elem : next_spawn->item_ids ) {
-                    if ( partbroken ) {
-                        int idmg = rng(1, 10);
-                        if ( idmg > 5 ) {
-                            continue;
-                        }
-                    }
-                    item new_item( elem, calendar::turn );
-                    new_item = new_item.in_its_container();
-                    if ( idmg > 0 ) {
-                        new_item.damage = (signed char)idmg;
-                    }
-                    add_item(part, new_item);
+                // if vehicle part is broken only 50% of items spawn and they will be variably damaged
+                bool broken = parts[ part ].hp < 1;
+                if( broken && one_in( 2 ) ) {
+                    continue;
                 }
-                for( auto &elem : next_spawn->item_groups ) {
-                    if ( partbroken ) {
-                        int idmg = rng(1, 10);
-                        if ( idmg > 5 ) {
-                            continue;
-                        }
-                    }
-                    item new_item = item_group::item_from( elem, 0 );
-                    if( new_item.is_null() ) {
+
+                std::vector<item> created;
+                for( const itype_id& e : spawn.item_ids ) {
+                    created.emplace_back( item( e ).in_its_container() );
+                }
+                for( const std::string& e : spawn.item_groups ) {
+                    created.emplace_back( item_group::item_from( e, calendar::turn ) );
+                }
+
+                for( item& e : created ) {
+                    if( e.is_null() ) {
                         continue;
                     }
-                    if ( idmg > 0 ) {
-                        new_item.damage = (signed char)idmg;
+                    if( broken ) {
+                        e.damage = rng( 1, MAX_ITEM_DAMAGE );
                     }
-                    add_item(part, new_item);
+                    if( rng( 0, 99 ) < spawn.with_magazine && !e.magazine_integral() && !e.magazine_current() ) {
+                        e.contents.emplace_back( e.magazine_default(), e.bday );
+                    }
+                    if( rng( 0, 99 ) < spawn.with_ammo && e.ammo_type() != "NULL" && e.ammo_remaining() == 0 ) {
+                        e.ammo_set( default_ammo( e.ammo_type() ), e.ammo_capacity() );
+                    }
+                    add_item( part, e);
                 }
             }
         }
@@ -6298,23 +6294,21 @@ bool vehicle::fire_turret( int p, bool manual )
     
     // Create a fake gun
     // @todo damage the gun based on part hp
-    item gun( turret_data.gun.typeId(), turret_data.gun.bday, charges );
-    gun.set_curammo( turret_data.gun.ammo_current() );
-    gun.update_charger_gun_ammo();
-
-    long charges_left = charges;
-
-    // TODO sometime: change that g->u to a parameter, so that NPCs can shoot too
-    const bool success = manual ?
-    // TODO: unify those two functions.
-        manual_fire_turret( p, g->u, gun, charges_left ) :
-        automatic_fire_turret( p, gun, charges_left );
-    if( success ) {
-        turret_data.consume( *this, p, charges - charges_left );
+    item gun( turret_data.gun.typeId(), turret_data.gun.bday );
+    if( gun.is_charger_gun() ) {
+        gun.charges = charges;
+        gun.update_charger_gun_ammo();
+    } else if( turret_data.gun.ammo_current() != "null" ) {
+        gun.ammo_set( turret_data.gun.ammo_current(), charges );
     }
 
+    // TODO sometime: change that g->u to a parameter, so that NPCs can shoot too
+    // TODO: unify those two functions.
+    int shots = manual ? manual_fire_turret( p, g->u, gun ) : automatic_fire_turret( p, gun );
+    turret_data.consume( *this, p, shots * gun.ammo_required() );
+
     // If manual, we need to know if the shot was actually executed
-    return !manual || success;
+    return !manual || shots > 0;
 }
 
 void vehicle::turret_ammo_data::consume( vehicle &veh, int const part, long const charges_consumed ) const
@@ -6340,8 +6334,10 @@ void vehicle::turret_ammo_data::consume( vehicle &veh, int const part, long cons
     }
 }
 
-bool vehicle::automatic_fire_turret( int p, item& gun, long &charges )
+int vehicle::automatic_fire_turret( int p, item& gun  )
 {
+    int res = 0; // number of shots actually fired
+
     tripoint pos = global_pos3();
     pos.x += parts[p].precalc[0].x;
     pos.y += parts[p].precalc[0].y;
@@ -6380,7 +6376,7 @@ bool vehicle::automatic_fire_turret( int p, item& gun, long &charges )
                                               boo_hoo),
                             tmp.name.c_str(), boo_hoo);
             }
-            return false;
+            return 0;
         }
 
         targ = auto_target->pos();
@@ -6389,7 +6385,7 @@ bool vehicle::automatic_fire_turret( int p, item& gun, long &charges )
         // Make sure we didn't move between aiming and firing (it's a bug if we did)
         if( targ != target.first ) {
             target.second = target.first;
-            return false;
+            return 0;
         }
 
         targ = target.second;
@@ -6398,13 +6394,9 @@ bool vehicle::automatic_fire_turret( int p, item& gun, long &charges )
     } else {
         // Shouldn't happen
         target.first = target.second;
-        return false;
+        return 0;
     }
 
-    // Move the charger gun "whoosh" here - no need to pass it from above
-    if( gun.is_charger_gun() && charges > 20 ) {
-        sounds::sound( targ, 20, _("whoosh!") );
-    }
     // notify player if player can see the shot
     if( g->u.sees( pos ) ) {
         add_msg(_("The %1$s fires its %2$s!"), name.c_str(), part_info(p).name.c_str());
@@ -6416,17 +6408,18 @@ bool vehicle::automatic_fire_turret( int p, item& gun, long &charges )
     tmp.worn.insert( tmp.worn.end(), tmp_ups );
 
     const int to_fire = std::min( abs(parts[p].mode), gun.burst_size() );
-    tmp.fire_gun( targ, to_fire, gun );
+    res = tmp.fire_gun( targ, to_fire, gun );
 
     // Return whatever is left.
     refill( fuel_type_battery, tmp.worn.back().charges );
-    charges = gun.charges; // Return real ammo, in case of burst ending early
 
-    return true;
+    return res;
 }
 
-bool vehicle::manual_fire_turret( int p, player &shooter, item &gun, long &charges )
+int vehicle::manual_fire_turret( int p, player &shooter, item &gun )
 {
+    int res = 0; // number of shots actually fired
+
     tripoint pos = global_pos3() + tripoint( parts[p].precalc[0], 0 );
 
     // Place the shooter at the turret
@@ -6454,7 +6447,7 @@ bool vehicle::manual_fire_turret( int p, player &shooter, item &gun, long &charg
         shooter.add_effect( effect_on_roof, 1 );
         
         int to_fire = abs(parts[p].mode) > 1 ? gun.burst_size() : 1; 
-        shooter.fire_gun( targ, to_fire, gun );
+        res = shooter.fire_gun( targ, to_fire, gun );
         // And now back - we don't want to get any weird behavior
         shooter.remove_effect( effect_on_roof );
     }
@@ -6475,8 +6468,6 @@ bool vehicle::manual_fire_turret( int p, player &shooter, item &gun, long &charg
         }
     }
 
-    charges = gun.charges;
-
     // Place the shooter back where we took them from
     shooter.setpos( oldpos );
 
@@ -6486,7 +6477,7 @@ bool vehicle::manual_fire_turret( int p, player &shooter, item &gun, long &charg
         add_msg( m_warning, _("Deactivating automatic target acquisition for this turret" ));
     }
 
-    return !trajectory.empty();
+    return res;
 }
 
 /**

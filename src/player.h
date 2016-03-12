@@ -24,7 +24,6 @@ class mission;
 class profession;
 nc_color encumb_color(int level);
 enum morale_type : int;
-class morale_point;
 enum game_message_type : int;
 class ma_technique;
 class martialart;
@@ -36,6 +35,7 @@ class start_location;
 using start_location_id = string_id<start_location>;
 struct it_comest;
 struct w_point;
+struct points_left;
 
 // This tries to represent both rating and
 // player's decision to respect said rating
@@ -132,7 +132,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
 
         // newcharacter.cpp
         bool create(character_type type, std::string tempname = "");
-        void randomize( bool random_scenario, int &points );
+        void randomize( bool random_scenario, points_left &points );
         bool load_template( const std::string &template_name );
         /** Calls Character::normalize()
          *  normalizes HP and bodytemperature
@@ -622,10 +622,21 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void apply_damage(Creature *source, body_part bp, int amount) override;
         /** Modifies a pain value by player traits before passing it to Creature::mod_pain() */
         void mod_pain(int npain) override;
+        /** Sets new intensity of pain an reacts to it */
+        void set_pain(int npain) override;
+        /** Returns perceived pain (reduced with painkillers)*/
+        int get_perceived_pain() const override;
 
         void cough(bool harmful = false, int volume = 4);
 
         void add_pain_msg(int val, body_part bp) const;
+
+        /** Modifies intensity of painkillers  */
+        void mod_painkiller(int npkill);
+        /** Sets intensity of painkillers  */
+        void set_painkiller(int npkill);
+        /** Returns intensity of painkillers  */
+        int get_painkiller() const;
 
         /** Heals a body_part for dam */
         void heal(body_part healed, int dam);
@@ -747,7 +758,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * @param prompt optional message to display in any menu
          * @return whether the item was successfully disposed of
          */
-        bool dispose_item( item& obj, const std::string& prompt = std::string() );
+        virtual bool dispose_item( item& obj, const std::string& prompt = std::string() );
 
         /**
          * Calculate (but do not deduct) the number of moves required when handling (eg. storing, drawing etc.) an item
@@ -905,7 +916,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void cancel_activity();
 
         int get_morale_level() const; // Modified by traits, &c
-        void invalidate_morale_level();
         void add_morale( morale_type type, int bonus, int max_bonus = 0, int duration = 60,
                         int decay_start = 30, bool capped = false, const itype *item_type = nullptr );
         int has_morale( morale_type type ) const;
@@ -1126,7 +1136,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int driving_recoil;
         int scent;
         int dodges_left, blocks_left;
-        int stim, pkill, radiation;
+        int stim, radiation;
         unsigned long cash;
         int movecounter;
         std::array<int, num_bp> temp_cur, frostbite_timer, temp_conv;
@@ -1143,7 +1153,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         std::array<int, num_bp> drench_capacity;
         std::array<int, num_bp> body_wetness;
 
-        std::vector<morale_point> morale;
+        player_morale morale;
 
         int focus_pool;
 
@@ -1264,6 +1274,26 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * Check @ref mission::failed to see which case it is.
          */
         void on_mission_finished( mission &mission );
+        /**
+         * Called when a mutation is gained
+         */
+        virtual void on_mutation_gain( const std::string &mid ) override;
+        /**
+         * Called when a mutation is lost
+         */
+        virtual void on_mutation_loss( const std::string &mid ) override;
+        /**
+         * Called when an item is worn
+         */
+        virtual void on_item_wear( const item &it ) override;
+        /**
+         * Called when an item is taken off
+         */
+        virtual void on_item_takeoff( const item &it ) override;
+        /**
+         * Called when effect intensity has been changed
+         */
+        virtual void on_effect_int_change( const efftype_id &eid, int intensity, body_part bp = num_bp ) override;
 
         // formats and prints encumbrance info to specified window
         void print_encumbrance( WINDOW * win, int line = -1, item *selected_limb = nullptr ) const;
@@ -1283,15 +1313,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void load(JsonObject &jsin);
 
     private:
-        // Mutability is required for lazy initialization
-        mutable int morale_level;
-        mutable bool morale_level_is_valid;
-
-        /** Returns current traits multiplier for morale */
-        morale_mult get_traits_mult() const;
-        /** Returns current effects multiplier for morale */
-        morale_mult get_effects_mult() const;
-
         // Items the player has identified.
         std::unordered_set<std::string> items_identified;
         /** Check if an area-of-effect technique has valid targets */
@@ -1332,6 +1353,9 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void deactivate_mutation( const std::string &mut );
         bool has_fire(const int quantity) const;
         void use_fire(const int quantity);
+
+        void react_to_felt_pain( int intensity );
+
         /**
          * Has the item enough charges to invoke its use function?
          * Also checks if UPS from this player is used instead of item charges.
@@ -1340,6 +1364,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
 
         bool can_study_recipe(const itype &book) const;
         bool try_study_recipe(const itype &book);
+
+        int pkill;
 
         std::vector<tripoint> auto_move_route;
         // Used to make sure auto move is canceled if we stumble off course

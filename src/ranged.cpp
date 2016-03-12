@@ -143,6 +143,14 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
         trajectory = g->m.find_clear_path( source, target );
     }
 
+    if( proj_effects.count( "MUZZLE_SMOKE" ) ) {
+        for( const auto& e : closest_tripoints_first( 1, trajectory.empty() ? source : trajectory[ 0 ] ) ) {
+            if( one_in( 2 ) ) {
+                g->m.add_field( e, fd_smoke, 1, 0 );
+            }
+        }
+    }
+
     add_msg( m_debug, "%s proj_atk: shot_dispersion: %.2f",
              disp_name().c_str(), shot_dispersion );
     add_msg( m_debug, "missed_by: %.2f target (orig/hit): %d,%d,%d/%d,%d,%d", missed_by,
@@ -279,6 +287,10 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
     drop_or_embed_projectile( attack );
 
     apply_ammo_effects( tp, proj.proj_effects );
+    const auto &expl = proj.get_custom_explosion();
+    if( expl.power > 0.0f ) {
+        g->explosion( tp, proj.get_custom_explosion() );
+    }
 
     // TODO: Move this outside now that we have hit point in return values?
     if( proj.proj_effects.count( "BOUNCE" ) ) {
@@ -668,6 +680,9 @@ dealt_projectile_attack player::throw_item( const tripoint &target, const item &
 
     // Put the item into the projectile
     proj.set_drop( std::move( thrown ) );
+    if( thrown.has_flag( "CUSTOM_EXPLOSION" ) ) {
+        proj.set_custom_explosion( thrown.type->explosion );
+    }
     const int range = rl_dist( pos(), target );
     proj.range = range;
 
@@ -1244,6 +1259,10 @@ static projectile make_gun_projectile( const item &gun ) {
             drop.active = fx.count( "ACT_ON_RANGED_HIT" );
             proj.set_drop( drop );
         }
+
+        if( fx.count( "CUSTOM_EXPLOSION" ) > 0  ) {
+            proj.set_custom_explosion( gun.ammo_data()->explosion );
+        }
     }
 
     return proj;
@@ -1332,6 +1351,8 @@ item::sound_data item::gun_noise( bool const burst ) const
     if( ammo_data() ) {
         noise += ammo_data()->ammo->loudness;
     }
+
+    noise = std::max( noise, 0 );
 
     if( ammo_type() == "40mm") {
         return { 8, _( "Thunk!" ) };

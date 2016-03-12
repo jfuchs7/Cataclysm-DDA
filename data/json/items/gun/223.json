@@ -25,7 +25,9 @@
     "barrel_length" : 1,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
   },
@@ -51,7 +53,9 @@
     "reload": 100,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ]
   },
   {
@@ -79,7 +83,9 @@
     "burst": 6,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-       [ "223", [ "stanag30", "stanag10", "survivor223mag" ] ]
+       [ "223", [ "stanag30", "stanag10", "survivor223mag" ] ],
+       [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+       [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
   },
@@ -108,9 +114,39 @@
     "burst": 15,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
+  },
+  {
+    "id": "l_bak_223",
+    "type": "GUN",
+    "name": "L2037 Backup",
+    "name_plural": "L2037 Backups",
+    "description": "Developed by Leadworks as a companion sidearm to the L523 modular system, this massive autorevolver fires the powerful .223 round, but suffers high recoil as a result.  It has a weighted barrel to make recoil more manageable and a 5-chamber cylinder.",
+    "weight": 2370,
+    "volume": 3,
+    "price": 267000,
+    "bashing": 7,
+    "to_hit": -2,
+    "material": [ "steel", "aluminum" ],
+    "symbol": "(",
+    "color": "light_gray",
+    "skill": "pistol",
+    "ammo": "223",
+    "range": -8,
+    "ranged_damage": -2,
+    "dispersion": 75,
+    "sight_dispersion": 90,
+    "aim_speed": 4,
+    "recoil": 120,
+    "durability": 8,
+    "clip_size": 5,
+    "reload": 75,
+    "valid_mod_locations": [ [ "accessories", 2 ], [ "barrel", 1 ], [ "bore", 1 ], [ "grip", 1 ], [ "sights", 1 ], [ "stock", 1 ], [ "underbarrel", 1 ] ],
+    "flags": [ "RELOAD_ONE", "NEVER_JAMS", "RELOAD_EJECT" ]
   },
   {
     "id": "l_base_223",
@@ -314,7 +350,9 @@
     "burst": 15,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag50", "stanag30", "stanag10" ] ]
+      [ "223", [ "stanag50", "stanag30", "stanag10" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
   },
@@ -343,7 +381,9 @@
     "burst": 10,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
   },
@@ -372,7 +412,9 @@
     "barrel_length" : 2,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "sights", 1 ]],
     "magazines": [
-      [ "223", [ "stanag10", "survivor223mag" ] ]
+      [ "223", [ "stanag10", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag" ] ]
     ]
   },
   {
@@ -400,7 +442,9 @@
     "burst": 10,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "scarhmag", "scarhbigmag" ] ]
     ],
     "flags": "MODE_BURST"
   },
@@ -429,8 +473,38 @@
     "burst": 6,
     "valid_mod_locations": [[ "accessories", 4 ],[ "barrel", 1 ],[ "bore", 1 ],[ "grip", 1 ],[ "mechanism", 4 ],[ "muzzle", 1 ],[ "rail", 1 ],[ "sights", 1 ],[ "stock", 1 ],[ "underbarrel", 1 ]],
     "magazines" : [
-      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ]
+      [ "223", [ "stanag30", "stanag10", "stanag50", "survivor223mag" ] ],
+      [ "22", [ "ruger1022bigmag", "ruger1022mag" ] ],
+      [ "308", [ "g3mag", "g3bigmag" ] ]
     ],
     "flags": "MODE_BURST"
+  },
+  {
+    "id": "surv_carbine_223",
+    "type": "GUN",
+    "name": "survivor carbine",
+    "description": "A well designed improvised carbine with a shortened barrel.  Accepting crude detachable magazines this is one of the better homemade weapons.",
+    "weight": 1950,
+    "volume": 6,
+    "price": 10000,
+    "bashing": 6,
+    "to_hit": -1,
+    "material": [ "steel", "wood" ],
+    "symbol": "(",
+    "color": "brown",
+    "skill": "rifle",
+    "ammo": "223",
+    "ranged_damage": -2,
+    "dispersion": 155,
+    "sight_dispersion": 60,
+    "aim_speed": 4,
+    "recoil": 30,
+    "durability": 6,
+    "reload": 140,
+    "loudness": 25,
+    "valid_mod_locations": [ [ "accessories", 2 ], [ "barrel", 1 ], [ "muzzle", 1 ], [ "stock", 1 ], [ "underbarrel", 1 ] ],
+    "magazines": [
+      [ "223", [ "survivor223mag" ] ]
+    ]
   }
 ]

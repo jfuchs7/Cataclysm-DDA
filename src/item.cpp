@@ -29,7 +29,6 @@
 #include "mtype.h"
 #include "field.h"
 #include "weather.h"
-#include "morale.h"
 #include "catacharset.h"
 #include "cata_utility.h"
 #include "input.h"
@@ -258,7 +257,7 @@ item& item::ammo_set( const itype_id& ammo, long qty )
 
 item& item::ammo_unset()
 {
-    if( !is_tool() || !is_gun() || !is_magazine() ) {
+    if( !is_tool() && !is_gun() && !is_magazine() ) {
         ; // do nothing
 
     } else if( is_magazine() ) {
@@ -1414,6 +1413,10 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
             }
         }
 
+        for( const auto &method : type->use_methods ) {
+            method.dump_info( *this, info );
+        }
+
         insert_separation_line();
 
         if( is_armor() ) {
@@ -1624,7 +1627,7 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                 }
             }
         }
-        
+
         if( is_gun() && has_flag( "FIRE_TWOHAND" ) ) {
             info.push_back( iteminfo( "DESCRIPTION",
                                       _( "* This weapon needs <info>two free hands</info> to fire." ) ) );
@@ -2020,11 +2023,13 @@ void item::on_wear( player &p )
     if( &p == &g->u && type->artifact ) {
         g->add_artifact_messages( type->artifact->effects_worn );
     }
+
+    p.on_item_wear( *this );
 }
 
 void item::on_takeoff (player &p)
 {
-    (void) p; // suppress unused variable warning
+    p.on_item_takeoff( *this );
 
     if (is_sided()) {
         set_side(BOTH);
@@ -4291,6 +4296,7 @@ bool item::can_reload( const itype_id& ammo ) const {
     }
 }
 
+// TODO: Constify the player &u
 item::reload_option item::pick_reload_ammo( player &u ) const
 {
     std::vector<reload_option> ammo_list;
@@ -4332,6 +4338,10 @@ item::reload_option item::pick_reload_ammo( player &u ) const
     std::stable_sort( ammo_list.begin(), ammo_list.end(), []( const reload_option& lhs, const reload_option& rhs ) {
         return ( lhs.ammo->ammo_remaining() != 0 ) > ( rhs.ammo->ammo_remaining() != 0 );
     } );
+
+    if( u.is_npc() ) {
+        return std::move( ammo_list[ 0 ] );
+    }
 
     if( ammo_list.size() == 1 ) {
         // Suppress display of reload prompt when...
@@ -4509,9 +4519,7 @@ bool item::reload( player &u, item_location loc, long qty )
                              ammo->tname().c_str(), container->type_name().c_str() );
     }
 
-    // First determine what we are trying to reload
-    item *obj = this;
-    item *target = nullptr;
+    item *obj = this; // what are we trying to reload?
 
     // for holsters and ammo pouches try to reload any contained item
     if( type->can_use( "holster" ) && !contents.empty() ) {
@@ -4519,88 +4527,73 @@ bool item::reload( player &u, item_location loc, long qty )
         obj = &contents[ 0 ];
     }
 
-    if( obj->is_gun() ) {
-        // Firstly try reloading active gunmod, then gun itself, any other auxiliary gunmods and finally currently loaded magazine
-        std::vector<item *> opts = { obj->gunmod_current(), obj };
-        std::transform( obj->contents.begin(), obj->contents.end(), std::back_inserter( opts ), []( item& mod ) {
-            return mod.is_auxiliary_gunmod() ? &mod : nullptr;
-        });
-        opts.push_back( obj->magazine_current() );
-
-        for( auto e : opts ) {
-            if( e != nullptr ) {
-                if( e->magazine_integral() ) {
-                    if( e->ammo_type() == ammo->ammo_type() &&
-                        (!e->ammo_remaining() || e->ammo_current() == ammo->typeId()) &&
-                        e->ammo_remaining() < e->ammo_capacity() ) {
-
-                        qty = std::min( qty, e->has_flag( "RELOAD_ONE" ) ? 1 : e->ammo_capacity() - e->ammo_remaining() );
-                        target = e;
-                        break;
-                    }
-                } else if( e->magazine_compatible().count( ammo->typeId() ) ) {
-                    target = e;
-                    break;
-                }
-            }
-        }
-    } else if( obj->is_tool() || obj->is_magazine() ) {
-        qty = std::min( qty, obj->ammo_capacity() - obj->ammo_remaining() );
-        if( obj->ammo_type() == ammo->ammo_type() && qty > 0 ) {
-            target = obj;
-        }
+    if( !obj->is_reloadable() ) {
+        return false;
     }
 
-    // If we found a suitable target, try and reload it
-    if ( target ) {
+    // Firstly try reloading active gunmod, then item itself, any other auxiliary gunmods and finally any currently loaded magazine
+    std::vector<item *> opts = { obj->gunmod_current(), obj };
+    auto mods = obj->gunmods();
+    std::copy_if( mods.begin(), mods.end(), std::back_inserter( opts ), []( item *e ) {
+        return e->is_auxiliary_gunmod();
+    });
+    opts.push_back( obj->magazine_current() );
 
-        eject_casings( u, *target );
+    auto target = std::find_if( opts.begin(), opts.end(), [&ammo]( item *e ) {
+        return e && e->can_reload( ammo->typeId() );
+    } );
+    if( target == opts.end() ) {
+        return false;
+    }
 
-        if( target->is_magazine() ) {
-            qty = std::min( qty, ammo->charges );
-            target->contents.emplace_back( *ammo );
-            target->contents.back().charges = qty;
-            ammo->charges -= qty;
+    obj = *target;
+    qty = std::min( qty, obj->has_flag( "RELOAD_ONE" ) ? 1 : obj->ammo_capacity() - obj->ammo_remaining() );
 
-        } else if ( !target->magazine_integral() ) {
-            // if we already have a magazine loaded prompt to eject it
-            if( target->magazine_current() ) {
-                std::string prompt = string_format( _( "Eject %s from %s?" ), ammo->tname().c_str(), target->tname().c_str() );
-                if( !u.dispose_item( *target->magazine_current(), prompt ) ) {
-                    return false;
-                }
+    eject_casings( u, *obj );
+
+    if( obj->is_magazine() ) {
+        qty = std::min( qty, ammo->charges );
+        obj->contents.emplace_back( *ammo );
+        obj->contents.back().charges = qty;
+        ammo->charges -= qty;
+
+    } else if ( !obj->magazine_integral() ) {
+        // if we already have a magazine loaded prompt to eject it
+        if( obj->magazine_current() ) {
+            std::string prompt = string_format( _( "Eject %s from %s?" ), ammo->tname().c_str(), obj->tname().c_str() );
+            if( !u.dispose_item( *obj->magazine_current(), prompt ) ) {
+                return false;
             }
+        }
 
-            target->contents.emplace_back( *ammo );
-            loc.remove_item();
+        obj->contents.emplace_back( *ammo );
+        loc.remove_item();
 
+    } else {
+        obj->set_curammo( *ammo );
+
+        if( ammo_type() == "plutonium" ) {
+            // always consume at least one cell but never more than actually available
+            auto cells = std::min( qty / PLUTONIUM_CHARGES + ( qty % PLUTONIUM_CHARGES != 0 ), ammo->charges );
+            ammo->charges -= cells;
+            // any excess is wasted rather than overfilling the obj
+            obj->charges += std::min( cells * PLUTONIUM_CHARGES, qty );
         } else {
-            target->set_curammo( *ammo );
-
-            if( ammo_type() == "plutonium" ) {
-                // always consume at least one cell but never more than actually available
-                auto cells = std::min( qty / PLUTONIUM_CHARGES + ( qty % PLUTONIUM_CHARGES != 0 ), ammo->charges );
-                ammo->charges -= cells;
-                // any excess is wasted rather than overfilling the target
-                target->charges += std::min( cells * PLUTONIUM_CHARGES, qty );
-            } else {
-                qty = std::min( qty, ammo->charges );
-                ammo->charges   -= qty;
-                target->charges += qty;
-            }
+            qty = std::min( qty, ammo->charges );
+            ammo->charges   -= qty;
+            obj->charges += qty;
         }
-
-        if( ammo->charges == 0 ) {
-            if( container != nullptr ) {
-                container->contents.erase(container->contents.begin());
-                u.inv.restack(&u); // emptied containers do not stack with non-empty ones
-            } else {
-                loc.remove_item();
-            }
-        }
-        return true;
     }
-    return false;
+
+    if( ammo->charges == 0 ) {
+        if( container != nullptr ) {
+            container->contents.erase(container->contents.begin());
+            u.inv.restack(&u); // emptied containers do not stack with non-empty ones
+        } else {
+            loc.remove_item();
+        }
+    }
+    return true;
 }
 
 bool item::burn(int amount)
@@ -5009,12 +5002,11 @@ iteminfo::iteminfo(std::string Type, std::string Name, std::string Fmt,
 
 void item::detonate( const tripoint &p ) const
 {
-    if (type == NULL || type->explosion_on_fire_data.power < 0) {
+    if( type == nullptr || type->explosion.power < 0 ) {
         return;
     }
 
-    g->explosion( p, type->explosion_on_fire_data.power, type->explosion_on_fire_data.distance_factor,
-                     type->explosion_on_fire_data.fire, type->explosion_on_fire_data.shrapnel );
+    g->explosion( p, type->explosion );
 }
 
 bool item_ptr_compare_by_charges( const item *left, const item *right)
@@ -5756,7 +5748,7 @@ bool item::is_reloadable() const
     if( !is_gun() && !is_tool() && !is_magazine() ) {
         return false;
 
-    } else if( has_flag( "NO_RELOAD") || has_flag( "RELOAD_AND_SHOOT" ) ) {
+    } else if( has_flag( "NO_RELOAD") ) {
         return false;
 
     } else if( ammo_type() == "NULL" ) {

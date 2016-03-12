@@ -24,7 +24,7 @@
 #include "ui.h"
 #include "mongroup.h"
 #include "itype.h"
-#include "morale.h"
+#include "morale_types.h"
 #include "trap.h"
 #include "overmap.h"
 #include "mtype.h"
@@ -1210,6 +1210,13 @@ use_function &use_function::operator=( const use_function &other )
 {
     actor.reset( other.actor ? other.actor->clone() : nullptr );
     return *this;
+}
+
+void use_function::dump_info( const item &it, std::vector<iteminfo> &dump ) const
+{
+    if( actor != nullptr ) {
+        actor->info( it, dump );
+    }
 }
 
 long use_function::call( player *player_instance, item *item_instance, bool active, const tripoint &pos ) const

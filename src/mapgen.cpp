@@ -276,71 +276,71 @@ void calculate_mapgen_weights() { // todo; rename as it runs jsonfunction setup 
  * load a single mapgen json structure; this can be inside an overmap_terrain, or on it's own.
  */
 
-mapgen_function * load_mapgen_function(JsonObject &jio, const std::string id_base, int default_idx) {
-    int mgweight = jio.get_int("weight", 1000);
-    mapgen_function * ret = NULL;
-    if ( mgweight <= 0 || jio.get_bool("disabled", false) ) {
-        const std::string mgtype = jio.get_string("method");
-        if ( default_idx != -1 && mgtype == "builtin" ) {
-            if ( jio.has_string("name") ) {
-                const std::string mgname = jio.get_string("name");
-                if ( mgname == id_base ) {
+mapgen_function *load_mapgen_function( JsonObject &jio, const std::string id_base, int default_idx ) {
+    int mgweight = jio.get_int( "weight", 1000 );
+    mapgen_function *ret = NULL;
+    if( mgweight <= 0 || jio.get_bool( "disabled", false ) ) {
+        const std::string mgtype = jio.get_string( "method" );
+        if( default_idx != -1 && mgtype == "builtin" ) {
+            if( jio.has_string( "name" ) ) {
+                const std::string mgname = jio.get_string( "name" );
+                if( mgname == id_base ) {
                     oter_mapgen[id_base][ default_idx ]->weight = 0;
                 }
             }
         }
         return NULL; // nothing
-    } else if ( jio.has_string("method") ) {
-        const std::string mgtype = jio.get_string("method");
-        if ( mgtype == "builtin" ) { // c-function
-            if ( jio.has_string("name") ) {
-                const std::string mgname = jio.get_string("name");
+    } else if( jio.has_string( "method" ) ) {
+        const std::string mgtype = jio.get_string( "method" );
+        if( mgtype == "builtin" ) { // c-function
+            if( jio.has_string( "name" ) ) {
+                const std::string mgname = jio.get_string( "name" );
                 const auto iter = mapgen_cfunction_map.find( mgname );
                 if( iter != mapgen_cfunction_map.end() ) {
                     ret = new mapgen_function_builtin( iter->second, mgweight );
-                    oter_mapgen[id_base].push_back( ret ); //new mapgen_function_builtin( mgname, mgweight ) );
+                    oter_mapgen[id_base].push_back( ret );
                 } else {
-                    debugmsg("oter_t[%s]: builtin mapgen function \"%s\" does not exist.", id_base.c_str(), mgname.c_str() );
+                    debugmsg( "oter_t[%s]: builtin mapgen function \"%s\" does not exist.", id_base.c_str(), mgname.c_str() );
                 }
             } else {
-                debugmsg("oter_t[%s]: Invalid mapgen function (missing \"name\" value).", id_base.c_str(), mgtype.c_str() );
+                debugmsg( "oter_t[%s]: Invalid mapgen function (missing \"name\" value).", id_base.c_str(), mgtype.c_str() );
             }
-        } else if ( mgtype == "lua" ) { // lua script
-            if ( jio.has_string("script") ) { // minified into one\nline
-                const std::string mgscript = jio.get_string("script");
+        } else if( mgtype == "lua" ) { // lua script
+            if( jio.has_string("script") ) { // minified into one\nline
+                const std::string mgscript = jio.get_string( "script" );
                 ret = new mapgen_function_lua( mgscript, mgweight );
-                oter_mapgen[id_base].push_back( ret ); //new mapgen_function_lua( mgscript, mgweight ) );
-            } else if ( jio.has_array("script") ) { // or 1 line per entry array
+                oter_mapgen[id_base].push_back( ret );
+            } else if( jio.has_array("script") ) { // or 1 line per entry array
                 std::string mgscript = "";
-                JsonArray jascr = jio.get_array("script");
-                while ( jascr.has_more() ) {
+                JsonArray jascr = jio.get_array( "script" );
+                while( jascr.has_more() ) {
                     mgscript += jascr.next_string();
                     mgscript += "\n";
                 }
                 ret = new mapgen_function_lua( mgscript, mgweight );
-                oter_mapgen[id_base].push_back( ret ); //new mapgen_function_lua( mgscript, mgweight ) );
+                oter_mapgen[id_base].push_back( ret );
             // todo; pass dirname current.json, because the latter two are icky
             // } else if ( jio.has_string("file" ) { // or "same-dir-as-this/json/something.lua
             } else {
-                debugmsg("oter_t[%s]: Invalid mapgen function (missing \"script\" or \"file\" value).", id_base.c_str() );
+                debugmsg( "oter_t[%s]: Invalid mapgen function (missing \"script\" or \"file\" value).", id_base.c_str() );
             }
 #ifndef LUA
             dbg( D_ERROR ) << "oter_t " << id_base << ": mapgen entry requires a build with LUA=1.";
 #endif
-        } else if ( mgtype == "json" ) {
-            if ( jio.has_object("object") ) {
-                JsonObject jo = jio.get_object("object");
+        } else if( mgtype == "json" ) {
+            if( jio.has_object( "object" ) ) {
+                JsonObject jo = jio.get_object( "object" );
                 std::string jstr = jo.str();
                 ret = new mapgen_function_json( jstr, mgweight );
-                oter_mapgen[id_base].push_back( ret ); //new mapgen_function_json( jstr ) );
+                oter_mapgen[id_base].push_back( ret );
             } else {
-                debugmsg("oter_t[%s]: Invalid mapgen function (missing \"object\" object)", id_base.c_str() );
+                debugmsg( "oter_t[%s]: Invalid mapgen function (missing \"object\" object)", id_base.c_str() );
             }
         } else {
-            debugmsg("oter_t[%s]: Invalid mapgen function type: %s", id_base.c_str(), mgtype.c_str() );
+            debugmsg( "oter_t[%s]: Invalid mapgen function type: %s", id_base.c_str(), mgtype.c_str() );
         }
     } else {
-        debugmsg("oter_t[%s]: Invalid mapgen function (missing \"method\" value, must be \"builtin\", \"lua\", or \"json\").", id_base.c_str() );
+        debugmsg( "oter_t[%s]: Invalid mapgen function (missing \"method\" value, must be \"builtin\", \"lua\", or \"json\").", id_base.c_str() );
     }
     return ret;
 }
@@ -348,26 +348,25 @@ mapgen_function * load_mapgen_function(JsonObject &jio, const std::string id_bas
 /*
  * feed bits `o json from standalone file to load_mapgen_function. (standalone json "type": "mapgen")
  */
-void load_mapgen( JsonObject &jo ) {
-    if ( jo.has_array( "om_terrain" ) ) {
+void load_mapgen( JsonObject &jo )
+{
+    if( jo.has_array( "om_terrain" ) ) {
         std::vector<std::string> mapgenid_list;
         JsonArray ja = jo.get_array( "om_terrain" );
         while( ja.has_more() ) {
             mapgenid_list.push_back( ja.next_string() );
         }
-        if ( !mapgenid_list.empty() ) {
+        if( !mapgenid_list.empty() ) {
             std::string mapgenid = mapgenid_list[0];
-            mapgen_function * mgfunc = load_mapgen_function(jo, mapgenid, -1);
-            if ( mgfunc != NULL ) {
-               for( auto &i : mapgenid_list) {
+            mapgen_function *mgfunc = load_mapgen_function( jo, mapgenid, -1 );
+            if( mgfunc != NULL ) {
+               for( auto &i : mapgenid_list ) {
                    oter_mapgen[ i ].push_back( mgfunc );
                }
             }
-        } else {
-
         }
     } else if ( jo.has_string( "om_terrain" ) ) {
-        load_mapgen_function(jo, jo.get_string("om_terrain"), -1);
+        load_mapgen_function(jo, jo.get_string( "om_terrain" ), -1);
     } else {
         debugmsg("mapgen entry requires \"om_terrain\": \"something\", or \"om_terrain\": [ \"list\", \"of\" \"somethings\" ]\n%s\n", jo.str().c_str() );
     }
@@ -1689,7 +1688,7 @@ int lua_mapgen( map *m, std::string id, mapgendata md, int t, float d, const std
  *     *   *  ***\n\
  *     *   * *   *\n\
  *****  ***  *   *\n\
-", mapf::ter_bind("*", t_paper), mapf::basic_bind(""));
+", mapf::ter_bind("*", t_paper), mapf::furn_bind("*", f_null));
     return 0;
 }
 #endif
@@ -3505,18 +3504,23 @@ C..C..C...|hhh|#########\n\
                     for (int i = 0; i <= 23; i++) {
                         for (int j = 0; j <= 23; j++) {
                             if (this->furn(i, j) == f_locker) {
-                                place_items("mil_surplus", 50,  i,  j, i,  j, false, 0);
+                                place_items( "clothing_soldier_set", 100,  i, j, i, j, false, 0 );
+                                if( one_in( 2 ) ) {
+                                    place_items( "gear_soldier_sidearm", 100,  i, j, i, j, false, 0, 100, 100 );
+                                } else {
+                                    place_items( "book_military", 100,  i, j, i, j, false, 0 );
+                                }
                             } else if (this->furn(i, j) == f_desk) {
                                 place_items("office", 50,  i,  j, i,  j, false, 0);
                             } else if (this->furn(i, j) == f_rack) {
                                 if (one_in(3)) {
-                                    place_items("mil_surplus", 30,  i,  j, i,  j, false, 0);
+                                    place_items( "military", 30,  i,  j, i,  j, false, 0 );
                                 } else if (one_in(2)) {
-                                    place_items("ammo", 30,  i,  j, i,  j, false, 0);
-                                } else if (one_in(3)) {
-                                    place_items("military", 30,  i,  j, i,  j, false, 0);
+                                    place_items( "ammo_milspec", 30,  i,  j, i,  j, false, 0 );
+                                } else if (one_in(4)) {
+                                    place_items( "mags_milspec", 30,  i,  j, i,  j, false, 0 );
                                 } else {
-                                    place_items("mil_rifles", 30,  i,  j, i,  j, false, 0);
+                                    place_items( "guns_milspec", 30,  i,  j, i,  j, false, 0, 100 );
                                 }
                             } else if (this->furn(i, j) == f_bed) {
                                 place_items("bed", 50,  i,  j, i,  j, false, 0);
@@ -4272,8 +4276,8 @@ ff.......|....|WWWWWWWW|\n\
                 furn_set(SEEX - 1, SEEY    , f_rack);
                 furn_set(SEEX    , SEEY    , f_rack);
                 furn_set(SEEX + 1, SEEY    , f_rack);
-                place_items("ammo", 96, SEEX - 2, SEEY - 1, SEEX + 1, SEEY - 1, false, 0);
-                place_items("allguns", 96, SEEX - 2, SEEY, SEEX + 1, SEEY, false, 0);
+                place_items("ammo_rare", 96, SEEX - 2, SEEY - 1, SEEX + 1, SEEY - 1, false, 0);
+                place_items("guns_rare", 96, SEEX - 2, SEEY, SEEX + 1, SEEY, false, 0);
                 spawn_item(SEEX + 1, SEEY    , "solar_panel_v3"); //quantum solar panel, 5 panels in one!
             }
             break;
@@ -4337,7 +4341,7 @@ ff.......|....|WWWWWWWW|\n\
             square_furn(this, f_counter, SEEX - 1, SEEY - 1, SEEX, SEEY);
             int item_count = 0;
             while (item_count < 5) {
-                item_count += place_items("bionics", 75, SEEX - 1, SEEY - 1, SEEX, SEEY, false, 0);
+                item_count += place_items( "bionics", 75, SEEX - 1, SEEY - 1, SEEX, SEEY, false, 0 ).size();
             }
             line(this, t_reinforced_glass, SEEX - 2, SEEY - 2, SEEX + 1, SEEY - 2);
             line(this, t_reinforced_glass, SEEX - 2, SEEY + 1, SEEX + 1, SEEY + 1);
@@ -4454,74 +4458,43 @@ ff.......|....|WWWWWWWW|\n\
                 // Fill rooms with items!
                 for (int i = 2; i <= 15; i += 13) {
                     items_location goods;
-                    int size = 0;
-                    bool HW = 0;
-                    switch (rng(1, 14)) {
-                    case  1:
-                    case  2:
-                        goods = "bots";
-                        size = 85;
-                        HW = 0;
-                        break;
-                    case  3:
-                    case  4:
-                        goods = "launchers";
-                        size = 83;
-                        HW = 0;
-                        break;
-                    case  5:
-                    case  6:
-                        goods = "mil_rifles";
-                        size = 87;
-                        HW = 0;
-                        break;
-                    case  7:
-                    case  8:
-                        goods = "grenades";
-                        size = 88;
-                        HW = 0;
-                        break;
-                    case  9:
-                    case 10:
-                        goods = "mil_armor";
-                        size = 85;
-                        HW = 0;
-                        break;
-                    case 11:
-                        goods = "mil_hw";
-                        size = 82;
-                        HW = 1;
-                        break;
-                    case 12:
-                    case 13:
-                        goods = "mil_food";
-                        size = 90;
-                        HW = 0;
-                        break;
-                    case 14:
-                        goods = "bionics_mil";
-                        size = 78;
-                        HW = 0;
-                        break;
+                    switch( rng( 1, 14 ) ) {
+                        case 1:
+                            goods = "bots";
+                            break;
+                        case 2:
+                            goods = "launchers";
+                            break;
+                        case 3:
+                        case 4:
+                            goods = "guns_rifle_milspec";
+                            break;
+                        case 5:
+                            goods = "mags_milspec";
+                            break;
+                        case 6:
+                        case 7:
+                        case 8:
+                            goods = "ammo_milspec";
+                            break;
+                        case  9:
+                            goods = "grenades";
+                            break;
+                        case 10:
+                            goods = "mil_armor";
+                            break;
+                        case 11:
+                            goods = "mil_hw";
+                            break;
+                        case 12:
+                        case 13:
+                            goods = "mil_food";
+                            break;
+                        case 14:
+                            goods = "bionics_mil";
+                            break;
                     }
-                    place_items(goods, size, i, j, i + 6, j + 5, false, 0);
-                      if (HW == 1) {
-                        if (one_in(2)) {
-                        spawn_item(i + 2, j + 1, "556", 2);
-                        }
-                        if (one_in(4)) {
-                        spawn_item(i + 2, j + 1, "8mm_fmj", 2);
-                        }
-                        if (one_in(4)) {
-                        spawn_item(i + 2, j + 1, "8mm_inc", 2);
-                        }
-                        if (one_in(5)) {
-                        spawn_item(i + 2, j + 1, "20x66_flechette", 2);
-                        }
-                        if (one_in(5)) {
-                        spawn_item(i + 2, j + 1, "40mm_concussive", 2);
-                        }
-                      }
+                    place_items( goods, 80, i, j, i + 6, j + 5, false, 0, 100 );
                 }
             }
             line(this, t_wall_metal, 1, 1, SEEX * 2 - 2, 1);
@@ -4583,14 +4556,16 @@ ff.......|....|WWWWWWWW|\n\
                         place_items("bed", 50, bx2 - 2, i, bx2 - 1, i, false, 0);
                     }
                     place_items("bedroom", 84, bx1 + 1, by1 + 1, bx2 - 1, by2 - 1, false, 0);
-                    place_items("mil_books", 45, bx1 + 1, by1 + 1, bx2 - 1, by2 - 1, false, 0);
+                    place_items("book_military", 45, bx1 + 1, by1 + 1, bx2 - 1, by2 - 1, false, 0);
                     break;
                 case 2: // Armory
                     line_furn(this, f_counter, bx1 + 1, by1 + 1, bx2 - 1, by1 + 1);
                     line_furn(this, f_counter, bx1 + 1, by2 - 1, bx2 - 1, by2 - 1);
                     line_furn(this, f_counter, bx1 + 1, by1 + 2, bx1 + 1, by2 - 2);
                     line_furn(this, f_counter, bx2 - 1, by1 + 2, bx2 - 1, by2 - 2);
-                    place_items("mil_rifles", 40, bx1 + 1, by1 + 1, bx2 - 1, by1 + 1, false, 0);
+                    place_items( "guns_rifle_milspec", 40, bx1 + 1, by1 + 1, bx2 - 1, by1 + 1, false, 0, 100 );
+                    place_items( "mags_milspec", 40, bx1 + 1, by1 + 1, bx2 - 1, by1 + 1, false, 0 );
+                    place_items( "ammo_milspec", 40, bx1 + 1, by1 + 1, bx2 - 1, by1 + 1, false, 0 );
                     place_items("launchers",  40, bx1 + 1, by2 - 1, bx2 - 1, by2 - 1, false, 0);
                     place_items("grenades",   40, bx1 + 1, by1 + 2, bx1 + 1, by2 - 2, false, 0);
                     place_items("mil_armor",  40, bx2 - 1, by1 + 2, bx2 - 1, by2 - 2, false, 0);
@@ -4701,12 +4676,10 @@ ff.......|....|WWWWWWWW|\n\
                 if (one_in(5)) { // Military zombie
                     add_spawn(mon_zombie_soldier, 1, rnx, rny);
                 } else if (one_in(2)) {
-                    add_item( rnx, rny, item::make_corpse() );
-                    place_items("launchers",  10, rnx, rny, rnx, rny, true, 0);
-                    place_items("mil_rifles", 30, rnx, rny, rnx, rny, true, 0);
-                    place_items("mil_armor",  70, rnx, rny, rnx, rny, true, 0);
-                    place_items("mil_food",   40, rnx, rny, rnx, rny, true, 0);
-                    spawn_item(rnx, rny, "id_military");
+                    add_item( rnx, rny, item::make_corpse( mon_zombie_soldier ) );
+                    if( one_in( 3 ) ) {
+                        place_items( "mon_zombie_soldier_death_drops", 100, rnx, rny, rnx, rny, true, 0, 100 );
+                    }
                 } else if (one_in(4)) { // Bionic Op zombie!
                     add_spawn(mon_zombie_bio_op, 1, rnx, rny);
                 } else if (one_in(4)) {
@@ -5982,7 +5955,7 @@ ff.......|....|WWWWWWWW|\n\
                                            f_null,           f_null,  f_indoor_plant, f_null,  f_null,   f_null,   f_table, f_null,   f_null,
                                            f_null,              f_null,   f_toilet, f_sink,  f_fridge, f_bookcase, f_chair, f_counter, f_desk,
                                            f_locker, f_null));
-        place_items("bigtools", 80,  18, 7, 21,  7, false, 0);
+        place_items("tools_construction", 80,  18, 7, 21,  7, false, 0);
         place_items("office", 80,  18,  11, 20,  11, false, 0);
         place_items("office", 60,  18,  13, 18,  13, false, 0);
         place_spawns( GROUP_PUBLICWORKERS, 1, 0, 0, SEEX * 2 - 1, SEEX * 2 - 1, 0.2);
@@ -6157,9 +6130,9 @@ __________           f  \n",
                                                f_null,    f_null,           f_null,  f_indoor_plant, f_null,  f_null,   f_null,   f_table, f_null,
                                                f_null,        f_null,              f_null,   f_toilet, f_sink,  f_fridge, f_bookcase, f_chair,
                                                f_counter, f_desk,  f_locker, f_null));
-            place_items("tools", 85,  14, 18, 17,  18, false, 0);
-            place_items("tools", 85,  17,  20, 17,  21, false, 0);
-            place_items("tools", 85,  12,  20, 12,  21, false, 0);
+            place_items("tools_carpentry", 85,  14, 18, 17,  18, false, 0);
+            place_items("tools_construction", 85,  17,  20, 17,  21, false, 0);
+            place_items("tools_earthworking", 85,  12,  20, 12,  21, false, 0);
             place_items("mechanics", 85,  21, 12, 21,  15, false, 0);
             place_items("mechanics", 85,  21,  4, 21,  7, false, 0);
             place_items("mechanics", 85,  14,  9, 16,  9, false, 0);
@@ -8719,7 +8692,7 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
             place_items("dresser", 80, 22, 18, 22, 18, false, 0);
             place_items("bedroom", 65, 15, 15, 22, 18, false, 0);
             place_items("softdrugs", 70, 11, 16, 12, 17, false, 0);
-            place_items("bigtools", 50, 1, 11, 6, 18, true, 0);
+            place_items("tools_earthworking", 50, 1, 11, 6, 18, true, 0);
             place_items("homeguns", 20, 1, 11, 6, 18, true, 0);
             place_items("bed", 60, 20, 21, 17, 18, true, 0);
             if (one_in(2)) {
@@ -8764,7 +8737,7 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
                                                f_bathtub, f_locker, f_null,      f_null,  f_null,   f_null,      f_null,   f_null,   f_null,
                                                f_null,            f_desk,  f_chair, f_bed,   f_dresser));
             place_items("cannedfood", 65, 12, 11, 12, 11, false, 0);
-            place_items("bigtools", 50, 1, 11, 6, 18, true, 0);
+            place_items("tools_earthworking", 50, 1, 11, 6, 18, true, 0);
             place_items("homeguns", 20, 1, 11, 6, 18, true, 0);
             place_items("bed", 60, 20, 21, 17, 18, true, 0);
             for (int i = 0; i <= 23; i++) {
@@ -8784,7 +8757,7 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
                         place_items("livingroom", 20,  i,  j, i,  j, false, 0);
                         place_items("survival_armor", 20,  i,  j, i,  j, false, 0);
                         place_items("camping", 20,  i,  j, i,  j, false, 0);
-                        place_items("survival_tools", 20,  i,  j, i,  j, false, 0);
+                        place_items("gear_survival", 20,  i,  j, i,  j, false, 0);
                         place_items("bed", 40,  i,  j, i,  j, false, 0);
                     }
                     if ( dat.is_groundcover( this->ter(i, j) ) ) {
@@ -8855,11 +8828,11 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
                 square(this, t_dirt, 22, 23, 23, 23);
                 ter_set(16, 21, t_barndoor);
             }
-            place_items("bigtools", 60, 4, 4, 7, 19, true, 0);
-            place_items("bigtools", 60, 16, 5, 19, 19, true, 0);
+            place_items("tools_earthworking", 60, 4, 4, 7, 19, true, 0);
+            place_items("tools_earthworking", 60, 16, 5, 19, 19, true, 0);
             place_items("mechanics", 40, 8, 4, 15, 19, true, 0);
             place_items("home_hw", 50, 4, 19, 7, 19, true, 0);
-            place_items("tools", 50, 4, 19, 7, 19, true, 0);
+            place_items("tools_common", 50, 4, 19, 7, 19, true, 0);
             for (int x = 4; x <= 6; x++) {
                 for (int y = 4; y <= 6; y++) {
                     spawn_item(x, y, "straw_pile", rng(0, 8));
@@ -10026,7 +9999,9 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
             place_items("allclothes", 90, 5, 6, 7, 7, false, 0);
             place_items("softdrugs", 90, 5, 11, 7, 12, false, 0);
             place_items("hardware", 90, 5, 16, 7, 17, false, 0);
-            place_items("mil_rifles", 90, 18, 9, 18, 14, false, 0);
+            if( one_in( 3 ) ) {
+                place_items( "guns_rifle_milspec", 90, 18, 9, 18, 14, false, 0, 100, 100 );
+            }
             place_items("office", 80, 10, 11, 13, 12, false, 0);
             add_spawn(mon_zombie_soldier, rng(1, 6), 12, 14);
         } else {
@@ -10651,7 +10626,7 @@ void map::place_vending(int x, int y, std::string type)
     } else {
         furn_set(x, y, f_vending_c);
     }
-    place_items(type, broken ? 40 : 99, x, y, x, y, false, 0, false);
+    place_items( type, broken ? 40 : 99, x, y, x, y, false, 0 );
 }
 
 int map::place_npc(int x, int y, std::string type)
@@ -10671,25 +10646,27 @@ int map::place_npc(int x, int y, std::string type)
 
 // A chance of 100 indicates that items should always spawn,
 // the item group should be responsible for determining the amount of items.
-int map::place_items(items_location loc, int chance, int x1, int y1,
-                     int x2, int y2, bool ongrass, int turn, bool)
+std::vector<item *> map::place_items( items_location loc, int chance, int x1, int y1,
+                                      int x2, int y2, bool ongrass, int turn,
+                                      int magazine, int ammo )
 {
+    std::vector<item *> res;
+
     const float spawn_rate = ACTIVE_WORLD_OPTIONS["ITEM_SPAWNRATE"];
 
     if (chance > 100 || chance <= 0) {
         debugmsg("map::place_items() called with an invalid chance (%d)", chance);
-        return 0;
+        return res;
     }
     if (!item_group::group_is_defined(loc)) {
         const point omt = sm_to_omt_copy( get_abs_sub().x, get_abs_sub().y );
         const oter_id &oid = overmap_buffer.ter( omt.x, omt.y, get_abs_sub().z );
         debugmsg("place_items: invalid item group '%s', om_terrain = '%s' (%s)",
                  loc.c_str(), oid.t().id.c_str(), oid.t().id_mapgen.c_str() );
-        return 0;
+        return res;
     }
 
     int px, py;
-    int item_num = 0;
     while (chance == 100 || rng(0, 99) < chance) {
         float lets_spawn = spawn_rate;
         while( rng_float( 0.0, 1.0 ) <= lets_spawn ) {
@@ -10709,14 +10686,23 @@ int map::place_items(items_location loc, int chance, int x1, int y1,
                 tries++;
             } while ( is_valid_terrain(px,py) && tries < 20 );
             if (tries < 20) {
-                item_num += put_items_from_loc( loc, tripoint( px, py, abs_sub.z ), turn ).size();
+                auto put = put_items_from_loc( loc, tripoint( px, py, abs_sub.z ), turn );
+                res.insert( res.end(), put.begin(), put.end() );
             }
         }
         if (chance == 100) {
             break;
         }
     }
-    return item_num;
+    for( auto e : res ) {
+        if( rng( 0, 99 ) < magazine && !e->magazine_integral() && !e->magazine_current() ) {
+            e->contents.emplace_back( e->magazine_default(), e->bday );
+        }
+        if( rng( 0, 99 ) < ammo && e->ammo_type() != "NULL" && e->ammo_remaining() == 0 ) {
+            e->ammo_set( default_ammo( e->ammo_type() ), e->ammo_capacity() );
+        }
+    }
+    return res;
 }
 
 std::vector<item*> map::put_items_from_loc(items_location loc, const tripoint &p, int turn)
@@ -11732,7 +11718,7 @@ void silo_rooms(map *m)
                 break;
             case  5:
             case  6:
-                used1 = "allguns";
+                used1 = "guns_common";
                 used2 = "ammo";
                 break;
             case  7:
@@ -11747,7 +11733,7 @@ void silo_rooms(map *m)
                 used1 = "electronics";
                 break;
             case 12:
-                used1 = "survival_tools";
+                used1 = "gear_survival";
                 break;
             case 13:
             case 14:
@@ -12513,7 +12499,7 @@ void mx_helicopter(map &m, const tripoint &abs_sub)
         extra_items = "science";
         break;
     case 3:
-        extra_items = "allguns";
+        extra_items = "guns_milspec";
         break;
     case 4:
         extra_items = "bionics";
@@ -12871,12 +12857,12 @@ void mx_supplydrop(map &m, const tripoint &abs_sub)
             item_group = "mil_armor";
             break;
         case 10:
-            item_group = "mil_rifles";
+            item_group = "guns_rifle_milspec";
             break;
         }
         int items_created = 0;
         for(int i = 0; i < 10 && items_created < 2; i++) {
-            items_created += m.place_items(item_group, 80, x, y, x, y, true, 0);
+            items_created += m.place_items( item_group, 80, x, y, x, y, true, 0, 100 ).size();
         }
         if (m.i_at(x, y).empty()) {
             m.destroy( tripoint( x,  y, abs_sub.z ), true );
