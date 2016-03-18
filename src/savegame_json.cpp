@@ -249,6 +249,7 @@ void Character::load(JsonObject &data)
     // needs
     data.read("thirst", thirst);
     data.read("hunger", hunger);
+    data.read( "fatigue", fatigue );
     data.read( "stomach_food", stomach_food);
     data.read( "stomach_water", stomach_water);
 
@@ -373,6 +374,7 @@ void Character::store(JsonOut &json) const
     // needs
     json.member( "thirst", thirst );
     json.member( "hunger", hunger );
+    json.member( "fatigue", fatigue);
     json.member( "stomach_food", stomach_food );
     json.member( "stomach_water", stomach_water );
 
@@ -415,7 +417,6 @@ void player::load(JsonObject &data)
     if( !data.read("posz", position.z) && g != nullptr ) {
       position.z = g->get_levz();
     }
-    data.read("fatigue", fatigue);
     data.read("stim", stim);
     data.read("pkill", pkill);
     data.read("radiation", radiation);
@@ -493,7 +494,6 @@ void player::store(JsonOut &json) const
     json.member( "posz", position.z );
 
     // energy
-    json.member( "fatigue", fatigue );
     json.member( "stim", stim );
     // pain
     json.member( "pkill", pkill );
@@ -1372,6 +1372,8 @@ void item::io( Archive& archive )
             convert( "UPS_off" );
         } else if( id == "adv_UPS_on" ) {
             convert( "adv_UPS_off" );
+        } else if( id == "metal_tank_small" ) {
+            convert( "jerrycan" );
         } else {
             convert( id );
         }
@@ -1494,6 +1496,12 @@ void vehicle_part::deserialize(JsonIn &jsin)
     JsonObject data = jsin.get_object();
     vpart_str_id pid;
     data.read("id", pid);
+
+    // swap deprecated charger gun for laser rifle
+    if( pid.str() == "laser_gun" ) {
+        pid = vpart_str_id( "laser_rifle" );
+    }
+
     // if we don't know what type of part it is, it'll cause problems later.
     if( !pid.is_valid() ) {
         if( pid.str() == "wheel_underbody" ) {

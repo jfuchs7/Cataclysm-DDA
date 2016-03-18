@@ -677,7 +677,6 @@ protected:
     bool process_litcig(player *carrier, const tripoint &pos);
     bool process_cable(player *carrier, const tripoint &pos);
     bool process_tool(player *carrier, const tripoint &pos);
-    bool process_charger_gun(player *carrier, const tripoint &pos);
 public:
     /**
      * Helper to bring a cable back to its initial state.
@@ -695,12 +694,10 @@ public:
     /**
      * Process and apply artifact effects. This should be called exactly once each turn, it may
      * modify character stats (like speed, strength, ...), so call it after those have been reset.
-     * @return True if the item should be destroyed (it has run out of charges or similar), false
-     * if the item should be kept. Artifacts usually return false as they never get destroyed.
      * @param carrier The character carrying the artifact, can be null.
      * @param pos The location of the artifact (should be the player location if carried).
      */
-    bool process_artifact( player *carrier, const tripoint &pos );
+    void process_artifact( player *carrier, const tripoint &pos );
 
  bool destroyed_at_zero_charges() const;
 // Most of the is_whatever() functions call the same function in our itype
@@ -1080,40 +1077,6 @@ public:
         /*@}*/
 
         /**
-         * @name Charger gun
-         *
-         * These functions are used on charger guns. Those items are activated, load over time
-         * (using the wielders UPS), and fire like a normal gun using pseudo ammo.
-         * Each function returns false when called on items that are not charger guns.
-         * Nothing is done in that case, so it's save to call them even when it's unknown whether
-         * the item is a charger gun.
-         * You must all @ref update_charger_gun_ammo before using properties of it as they depend
-         * on the charges of the gun.
-         */
-        /*@{*/
-        /**
-         * Deactivate the gun.
-         */
-        bool deactivate_charger_gun();
-        /**
-         * Activate the gun, it will now load charges over time.
-         * The item must be in the possessions of a player (given as parameter).
-         * The function will show a message regarding the loading status. If the player does not
-         * have a power source, it will not start loading and a different message is displayed.
-         * Can be called on npcs (no messages than).
-         */
-        bool activate_charger_gun( player &u );
-        /**
-         * Update the charges ammo settings. This must be called right before firing the gun because
-         * the properties of the ammo depend on the loading of the gun.
-         * E.g. a gun with many charges provides more ammo effects.
-         */
-        bool update_charger_gun_ammo();
-        /** Whether this is a charger gun. */
-        bool is_charger_gun() const;
-        /*@}*/
-
-        /**
          * @name Gun and gunmod functions
          *
          * Gun and gun mod functions. Anything stated to apply to guns, applies to auxiliary gunmods
@@ -1141,6 +1104,11 @@ public:
          *  @param conversion whether to include the effect of any flags or mods which convert the type
          *  @return NULL if item does not use a specific ammo type (and is consequently not reloadable) */
         ammotype ammo_type( bool conversion = true ) const;
+
+        /** Get default ammo used by item or "NULL" if item does not have a default ammo type
+         *  @param conversion whether to include the effect of any flags or mods which convert the type
+         *  @return NULL if item does not use a specific ammo type (and is consequently not reloadable) */
+        itype_id ammo_default( bool conversion = true ) const;
 
         /** Get ammo effects for item optionally inclusive of any resulting from the loaded ammo */
         std::set<std::string> ammo_effects( bool with_ammo = true ) const;
@@ -1307,27 +1275,6 @@ public:
          */
         item *get_usable_item( const std::string &use_name );
 
-        /**
-         * Recursively check the contents of this item and remove those items
-         * that match the filter. Note that this function does *not* match
-         * the filter against *this* item, only against the contents.
-         * @return The removed items, the list may be empty if no items matches.
-         */
-        template<typename T>
-        std::list<item> remove_items_with( T filter )
-        {
-            std::list<item> result;
-            for( auto it = contents.begin(); it != contents.end(); ) {
-                if( filter( *it ) ) {
-                    result.push_back( std::move( *it ) );
-                    it = contents.erase( it );
-                } else {
-                    result.splice( result.begin(), it->remove_items_with( filter ) );
-                    ++it;
-                }
-            }
-            return result;
-        }
         /**
          * Returns the translated item name for the item with given id.
          * The name is in the proper plural form as specified by the
