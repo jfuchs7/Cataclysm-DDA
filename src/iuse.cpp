@@ -2871,7 +2871,7 @@ int iuse::pack_item(player *p, item *it, bool t, const tripoint& )
 
 static int cauterize_elec(player *p, item *it)
 {
-    if (it->charges == 0) {
+    if (it->charges == 0 && it->ammo_capacity()) {
         p->add_msg_if_player(m_info, _("You need batteries to cauterize wounds."));
         return 0;
     } else if (!p->has_effect( effect_bite ) && !p->has_effect( effect_bleed ) && !p->is_underwater()) {
@@ -3382,11 +3382,18 @@ int iuse::makemound(player *p, item *it, bool, const tripoint& )
     }
 }
 
-//TODO remove this?
-int iuse::dig(player *p, item *it, bool, const tripoint& )
+int iuse::dig(player *p, item *it, bool, const tripoint & )
 {
-    p->add_msg_if_player(m_info, _("You can dig a pit via the construction menu -- hit *"));
-    return it->type->charges_to_use();
+    for( const tripoint &pt : closest_tripoints_first( 1, p->pos() ) ) {
+        if( g->m.furn_at( pt ).examine == iexamine::rubble ) {
+            p->moves -= 200;
+            p->add_msg_if_player( _("You clear up that %s."), g->m.furnname( pt ).c_str() );
+            g->m.furn_set( pt, f_null );
+            return it->type->charges_to_use();
+        }
+    }
+
+    return 0;
 }
 
 void act_vehicle_siphon(vehicle *); // veh_interact.cpp
@@ -5684,9 +5691,11 @@ int iuse::artifact(player *p, item *it, bool, const tripoint& )
                 break;
 
             case AEA_SCREAM:
-                p->add_msg_if_player(m_warning, _("Your %s screams disturbingly."), it->tname().c_str());
                 sounds::sound(p->pos(), 40, "");
-                p->add_morale(MORALE_SCREAM, -10, 0, 300, 5);
+                if (!p->is_deaf()) {
+                    p->add_msg_if_player(m_warning, _("Your %s screams disturbingly."), it->tname().c_str());
+                    p->add_morale(MORALE_SCREAM, -10, 0, 300, 5);
+                }
                 break;
 
             case AEA_DIM:
@@ -6051,25 +6060,24 @@ int iuse::unfold_generic(player *p, item *it, bool, const tripoint& )
 
 int iuse::adrenaline_injector(player *p, item *it, bool, const tripoint& )
 {
-    if( p->is_npc() && p->stim > 100 ) {
+    if( p->is_npc() && p->get_effect_dur( effect_adrenaline ) >= 300 ) {
         return 0;
     }
 
     p->moves -= 100;
-    p->add_msg_if_player(_("You inject yourself with adrenaline."));
+    p->add_msg_player_or_npc( _("You inject yourself with adrenaline."),
+                              _("<npcname> injects themselves with adrenaline.") );
 
     item syringe( "syringe", it->bday );
     p->i_add( syringe );
-    p->add_effect( effect_adrenaline, 200);
-    if (p->has_effect( effect_adrenaline)) {
-        //Massively boost stimulant level, risking death on an extended chain
-        p->stim += 80;
+    if( p->has_effect( effect_adrenaline ) ) {
+        p->add_msg_if_player( m_bad, _("Your heart spasms!") );
+        // Note: not the mod, the health
+        p->mod_healthy( -20 );
     }
 
-    if (p->has_effect( effect_asthma)) {
-        p->remove_effect( effect_asthma);
-        p->add_msg_if_player(m_good, _("The adrenaline causes your asthma to clear."));
-    }
+    p->add_effect( effect_adrenaline, 200 );
+
     return it->type->charges_to_use();
 }
 

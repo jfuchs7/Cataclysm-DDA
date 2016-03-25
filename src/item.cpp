@@ -680,21 +680,16 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
             insert_separation_line();
         }
 
-        if( made_of().size() > 0 ) {
+        const std::vector<material_type*> mat_types = made_of_types();
+        if( !mat_types.empty() ) {
             std::string material_list;
-            bool made_of_something = false;
-            for( auto next_material : made_of_types() ) {
-                if( !next_material->is_null() ) {
-                    if( made_of_something ) {
-                        material_list.append( ", " );
-                    }
-                    material_list.append( "<stat>" + next_material->name() + "</stat>" );
-                    made_of_something = true;
+            for( auto next_material : mat_types ) {
+                if( !material_list.empty() ) {
+                    material_list.append( ", " );
                 }
+                material_list.append( "<stat>" + next_material->name() + "</stat>" );
             }
-            if( made_of_something ) {
-                info.push_back( iteminfo( "BASE", string_format( _( "Material: %s" ), material_list.c_str() ) ) );
-            }
+            info.push_back( iteminfo( "BASE", string_format( _( "Material: %s" ), material_list.c_str() ) ) );
         }
         if( has_var( "contained_name" ) ) {
             info.push_back( iteminfo( "BASE", string_format( _( "Contains: %s" ),
@@ -2069,11 +2064,19 @@ void item::on_wield( player &p, int mv )
     p.add_msg_if_player( msg.c_str(), tname().c_str() );
 }
 
-void item::on_pickup( Character &p  )
+void item::on_pickup( Character &p )
 {
     // TODO: artifacts currently only work with the player character
     if( &p == &g->u && type->artifact ) {
         g->add_artifact_messages( type->artifact->effects_carried );
+    }
+
+    if( is_bucket_nonempty() ) {
+        for( const auto &it : contents ) {
+            g->m.add_item( p.pos(), it );
+        }
+
+        contents.clear();
     }
 }
 
@@ -2727,7 +2730,7 @@ bool item::has_rotten_away() const
     return false;
 }
 
-float item::get_relative_rot()
+float item::get_relative_rot() const
 {
     const it_comest *comest = dynamic_cast<const it_comest *>( type );
     if( comest != nullptr && comest->spoils > 0 ) {
@@ -3001,7 +3004,6 @@ int item::bash_resist( bool to_self ) const
     if( item_tags.count("kevlar_padded") > 0 ){
         k_padding = max_value / ( 1 + exp( stepness * ( get_thickness() - center_of_S )));
     }
-    std::vector<material_type*> mat_types = made_of_types();
     // Armor gets an additional multiplier.
     if( is_armor() ) {
         // base resistance
@@ -3010,11 +3012,14 @@ int item::bash_resist( bool to_self ) const
         eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
-    for (auto mat : mat_types) {
-        resist += mat->bash_resist();
+    const std::vector<material_type*> mat_types = made_of_types();
+    if( !mat_types.empty() ) {
+        for (auto mat : mat_types) {
+            resist += mat->bash_resist();
+        }
+        // Average based on number of materials.
+        resist /= mat_types.size();
     }
-    // Average based on number of materials.
-    resist /= mat_types.size();
 
     return lround((resist * eff_thickness * adjustment) + l_padding + k_padding);
 }
@@ -3045,7 +3050,6 @@ int item::cut_resist( bool to_self ) const
         static constexpr float center_of_S = 2.0f;
         k_padding = max_value / ( 1 + exp( stepness * ( get_thickness() - center_of_S )));
     }
-    std::vector<material_type*> mat_types = made_of_types();
     // Armor gets an additional multiplier.
     if( is_armor() ) {
         // base resistance
@@ -3054,11 +3058,14 @@ int item::cut_resist( bool to_self ) const
         eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
-    for( auto mat : mat_types ) {
-        resist += mat->cut_resist();
+    const std::vector<material_type*> mat_types = made_of_types();
+    if( !mat_types.empty() ) {
+        for( auto mat : mat_types ) {
+            resist += mat->cut_resist();
+        }
+        // Average based on number of materials.
+        resist /= mat_types.size();
     }
-    // Average based on number of materials.
-    resist /= mat_types.size();
 
     return lround((resist * eff_thickness * adjustment) + l_padding + k_padding);
 }
@@ -3081,15 +3088,18 @@ int item::acid_resist( bool to_self ) const
         return 0.0;
     }
 
-    std::vector<material_type*> mat_types = made_of_types();
-    // Not sure why cut and bash get an armor thickness bonus but acid doesn't,
-    // but such is the way of the code.
+    const std::vector<material_type*> mat_types = made_of_types();
+    if( !mat_types.empty() ) {
+        // Not sure why cut and bash get an armor thickness bonus but acid doesn't,
+        // but such is the way of the code.
 
-    for( auto mat : mat_types ) {
-        resist += mat->acid_resist();
+        for( auto mat : mat_types ) {
+            resist += mat->acid_resist();
+        }
+        // Average based on number of materials.
+        resist /= mat_types.size();
     }
-    // Average based on number of materials.
-    resist /= mat_types.size();
+
     const int env = get_env_resist();
     if( !to_self && env < 10 ) {
         // Low env protection means it doesn't prevent acid seeping in.
@@ -3106,13 +3116,15 @@ int item::fire_resist( bool to_self ) const
         return 0.0;
     }
 
-    std::vector<material_type*> mat_types = made_of_types();
-
-    for( auto mat : mat_types ) {
-        resist += mat->fire_resist();
+    const std::vector<material_type*> mat_types = made_of_types();
+    if( !mat_types.empty() ) {
+        for( auto mat : mat_types ) {
+            resist += mat->fire_resist();
+        }
+        // Average based on number of materials.
+        resist /= mat_types.size();
     }
-    // Average based on number of materials.
-    resist /= mat_types.size();
+
     const int env = get_env_resist();
     if( !to_self && env < 10 ) {
         // Iron resists immersion in magma, iron-clad knight won't.
@@ -3187,11 +3199,7 @@ bool item::is_two_handed( const player &u ) const
 
 const std::vector<std::string> &item::made_of() const
 {
-    const static std::vector<std::string> null_material = {"null"};
-    if( is_null() ) {
-        // pass, we're not made of anything at the moment.
-        return null_material;
-    } else if( is_corpse() ) {
+    if( is_corpse() ) {
         return corpse->mat;
     }
     return type->materials;
@@ -3199,13 +3207,9 @@ const std::vector<std::string> &item::made_of() const
 
 std::vector<material_type*> item::made_of_types() const
 {
-    std::vector<std::string> materials_composed_of = made_of();
     std::vector<material_type*> material_types_composed_of;
-    material_type *next_material;
-
-    for (auto mat_id : materials_composed_of) {
-        next_material = material_type::find_material(mat_id);
-        material_types_composed_of.push_back(next_material);
+    for (auto mat_id : made_of()) {
+        material_types_composed_of.push_back(material_type::find_material(mat_id));
     }
     return material_types_composed_of;
 }
@@ -3225,14 +3229,7 @@ bool item::made_of_any( const std::vector<std::string> &mat_idents ) const
 bool item::only_made_of( const std::vector<std::string> &mat_idents ) const
 {
     for( auto target_material : made_of() ) {
-        bool found = false;
-        for( auto candidate_material : mat_idents ) {
-            if( candidate_material == target_material ) {
-                found = true;
-                break;
-            }
-        }
-        if( !found ) {
+        if( std::find( mat_idents.begin(), mat_idents.end(), target_material ) == mat_idents.end() ) {
             return false;
         }
     }
@@ -3241,10 +3238,6 @@ bool item::only_made_of( const std::vector<std::string> &mat_idents ) const
 
 bool item::made_of( const std::string &mat_ident ) const
 {
-    if( is_null() ) {
-        return false;
-    }
-
     const auto &materials = made_of();
     return std::find( materials.begin(), materials.end(), mat_ident ) != materials.end();
 }
@@ -3266,7 +3259,7 @@ bool item::conductive() const
 
     // If any material does not resist electricity we are conductive.
     for (auto mat : made_of_types()) {
-        if (!mat->is_null() && mat->elec_resist() <= 0) {
+        if (mat->elec_resist() <= 0) {
             return true;
         }
     }
@@ -3455,6 +3448,21 @@ bool item::is_sealable_container() const
     return type->container && type->container->seals;
 }
 
+bool item::is_bucket() const
+{
+    // That "preserves" part is a hack:
+    // Currently all non-empty cans are effectively sealed at all times
+    // Making them buckets would cause weirdness
+    return type->container != nullptr &&
+           !type->container->seals &&
+           !type->container->preserves;
+}
+
+bool item::is_bucket_nonempty() const
+{
+    return is_bucket() && !is_container_empty();
+}
+
 bool item::is_container_empty() const
 {
     return contents.empty();
@@ -3540,6 +3548,60 @@ bool item::is_software() const
 bool item::is_artifact() const
 {
     return type->artifact.get() != nullptr;
+}
+
+bool item::can_contain( const item &it ) const
+{
+    // @todo Volume check
+    return can_contain( *it.type );
+}
+
+bool item::can_contain( const itype &tp ) const
+{
+    if( type->container == nullptr ) {
+        // @todo: Tools etc.
+        return false;
+    }
+
+    if( tp.phase == LIQUID && !type->container->watertight ) {
+        return false;
+    }
+
+    // @todo Acid in waterskins
+    return true;
+}
+
+bool item::spill_contents( Character &c )
+{
+    if( c.is_npc() ) {
+        return spill_contents( c.pos() );
+    }
+
+    while( !contents.empty() ) {
+        if( contents[0].made_of( LIQUID ) ) {
+            long charges_pre = contents[0].charges;
+            if( g->handle_liquid( contents[0], false, false, this, nullptr, 1 ) ) {
+                contents.erase( contents.begin() );
+            } else if( charges_pre == contents[0].charges ) {
+                return false;
+            }
+        } else {
+            c.i_add_or_drop( contents[0] );
+            contents.erase( contents.begin() );
+        }
+    }
+
+    return true;
+}
+
+bool item::spill_contents( const tripoint &pos )
+{
+    for( item &it : contents ) {
+        g->m.add_item_or_charges( pos, it );
+    }
+
+    contents.clear();
+    return true;
 }
 
 int item::get_chapters() const
@@ -4714,9 +4776,9 @@ int item::getlight_emit() const
     return lumint;
 }
 
-long item::get_remaining_capacity_for_liquid(const item &liquid) const
+long item::get_remaining_capacity_for_liquid( const item &liquid, bool allow_bucket ) const
 {
-    if ( has_valid_capacity_for_liquid( liquid ) != L_ERR_NONE) {
+    if ( has_valid_capacity_for_liquid( liquid, allow_bucket ) != L_ERR_NONE) {
         return 0;
     }
 
@@ -4741,7 +4803,7 @@ long item::get_remaining_capacity_for_liquid(const item &liquid) const
     return remaining_capacity;
 }
 
-item::LIQUID_FILL_ERROR item::has_valid_capacity_for_liquid(const item &liquid) const
+item::LIQUID_FILL_ERROR item::has_valid_capacity_for_liquid( const item &liquid, bool allow_bucket ) const
 {
     if (liquid.is_ammo() && (is_tool() || is_gun())) {
         // for filling up chainsaws, jackhammers and flamethrowers
@@ -4772,20 +4834,20 @@ item::LIQUID_FILL_ERROR item::has_valid_capacity_for_liquid(const item &liquid) 
         }
     }
 
-    if (!is_container()) {
+    if( !is_container() ) {
         return L_ERR_NOT_CONTAINER;
     }
 
-    if (contents.empty()) {
-        if ( !type->container->watertight ) {
-            return L_ERR_NOT_WATERTIGHT;
-        } else if( !type->container->seals) {
-            return L_ERR_NOT_SEALED;
-        }
-    } else { // Not empty
-        if ( contents[0].type->id != liquid.type->id ) {
-            return L_ERR_NO_MIX;
-        }
+    if( !contents.empty() && contents[0].type->id != liquid.type->id ) {
+        return L_ERR_NO_MIX;
+    }
+
+    if( !type->container->watertight ) {
+        return L_ERR_NOT_WATERTIGHT;
+    }
+
+    if( !allow_bucket && !type->container->seals ) {
+        return L_ERR_NOT_SEALED;
     }
 
     if (!contents.empty()) {
@@ -4834,9 +4896,9 @@ bool item::use_amount(const itype_id &it, long &quantity, std::list<item> &used)
     }
 }
 
-bool item::fill_with( item &liquid, std::string &err )
+bool item::fill_with( item &liquid, std::string &err, bool allow_bucket )
 {
-    LIQUID_FILL_ERROR lferr = has_valid_capacity_for_liquid( liquid );
+    LIQUID_FILL_ERROR lferr = has_valid_capacity_for_liquid( liquid, allow_bucket );
     switch ( lferr ) {
         case L_ERR_NONE :
             break;
@@ -4850,7 +4912,9 @@ bool item::fill_with( item &liquid, std::string &err )
             err = string_format( _( "That %s isn't water-tight." ), tname().c_str());
             return false;
         case L_ERR_NOT_SEALED:
-            err = string_format( _( "You can't seal that %s!" ), tname().c_str());
+            err = is_bucket() ?
+                  string_format( _( "That %s must be on the ground or held to hold contents!" ), tname().c_str()) :
+                  string_format( _( "You can't seal that %s!" ), tname().c_str());
             return false;
         case L_ERR_FULL:
             err = string_format( _( "Your %1$s can't hold any more %2$s." ), tname().c_str(), liquid.tname().c_str());
@@ -4860,7 +4924,7 @@ bool item::fill_with( item &liquid, std::string &err )
             return false;
     }
 
-    const long remaining_capacity = get_remaining_capacity_for_liquid( liquid );
+    const long remaining_capacity = get_remaining_capacity_for_liquid( liquid, allow_bucket );
     const long amount = std::min( remaining_capacity, liquid.charges );
 
     if( !is_container_empty() ) {
