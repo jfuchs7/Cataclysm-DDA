@@ -162,6 +162,9 @@ class game
         void unserialize_master(std::ifstream &fin);  // for load
         bool unserialize_master_legacy(std::ifstream &fin);  // for old load
 
+        /** write stats of all loaded items of the given type to stdout */
+        void dump_stats( const std::string& what );
+
         /** Returns false if saving failed. */
         bool save();
         /** Deletes the given world. If delete_folder is true delete all the files and directories
@@ -456,6 +459,7 @@ class game
         void zoom_in();
         void zoom_out();
         void reset_zoom();
+        int get_user_action_counter() const;
 
         std::unique_ptr<weather_generator> weather_gen;
         signed char temperature;              // The air temperature
@@ -523,7 +527,7 @@ class game
         //otherwise returns sentinel -1, signifies transaction fail.
         int move_liquid(item &liquid);
 
-        void open_gate( const tripoint &p, const ter_id handle_type );
+        void open_gate( const tripoint &p );
 
         // Knockback functions: knock target at t along a line, either calculated
         // from source position s using force parameter or passed as an argument;
@@ -603,7 +607,7 @@ class game
         // will do so, if bash_dmg is greater than 0, items won't stop the door
         // from closing at all.
         // If the door gets closed the items on the door tile get moved away or destroyed.
-        bool forced_gate_closing( const tripoint &p, const ter_id door_type, int bash_dmg );
+        bool forced_door_closing( const tripoint &p, const ter_id door_type, int bash_dmg );
 
 
         //pixel minimap management
@@ -826,6 +830,7 @@ private:
         special_game *gamemode;
 
         int moveCount; //Times the player has moved (not pause, sleep, etc)
+        int user_action_counter; // Times the user has input an action
         const int lookHeight; // Look Around window height
 
         /** How far the tileset should be zoomed out, 16 is default. 32 is zoomed in by x2, 8 is zoomed out by x0.5 */

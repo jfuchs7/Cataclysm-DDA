@@ -180,6 +180,7 @@ classes = {
             { name = "is_wearing_on_bp", rval = "bool", args = { "string", "body_part" } },
             { name = "is_worn", rval = "bool", args = { "item" } },
             { name = "limb_color", rval = "int", args = { "body_part", "bool", "bool", "bool" } },
+            { name = "made_of", rval = "bool", args = { "string" } },
             { name = "mod_int_bonus", rval = nil, args = { "int" } },
             { name = "mod_stat", rval = nil, args = { "string", "int" } },
             { name = "move_effects", rval = "bool", args = { "bool" } },
@@ -360,7 +361,7 @@ classes = {
             { name = "npc_by_id", rval = "int", args = { "int" } },
             { name = "nuke", rval = nil, args = { "tripoint" } },
             { name = "num_zombies", rval = "int", args = { } },
-            { name = "open_gate", rval = nil, args = { "tripoint", "ter_id" } },
+            { name = "open_gate", rval = nil, args = { "tripoint" } },
             { name = "peek", rval = nil, args = { "tripoint" } },
             { name = "peek", rval = nil, args = { } },
             { name = "plfire", rval = nil, args = { "bool" } },
@@ -418,7 +419,7 @@ classes = {
             cash = { type = "int", writable = true },
             controlling_vehicle = { type = "bool", writable = true },
             dodges_left = { type = "int", writable = true },
-            driving_recoil = { type = "int", writable = true },            
+            driving_recoil = { type = "int", writable = true },
             focus_pool = { type = "int", writable = true },
             grab_point = { type = "tripoint", writable = true },
             in_vehicle = { type = "bool", writable = true },
@@ -1513,7 +1514,6 @@ classes = {
             { name = "get_hp_max", rval = "int", args = { "hp_part" } },
             { name = "get_hp_max", rval = "int", args = { } },
             { name = "get_killer", rval = "Creature&", args = { } },
-            { name = "get_material", rval = "string", args = { } },
             { name = "get_melee", rval = "int", args = { } },
             { name = "get_melee_quiet", rval = "bool", args = { } },
             { name = "get_name", rval = "string", args = { } },
@@ -1686,7 +1686,6 @@ classes = {
             { name = "get_hp", rval = "int", args = { } },
             { name = "get_hp_max", rval = "int", args = { "hp_part" } },
             { name = "get_hp_max", rval = "int", args = { } },
-            { name = "get_material", rval = "string", args = { } },
             { name = "get_melee", rval = "int", args = { } },
             { name = "get_random_body_part", rval = "body_part", args = { "bool" } },
             { name = "get_size", rval = "m_size", args = { } },
@@ -1869,7 +1868,7 @@ classes = {
             { name = "get_meat_itype", rval = "string", args = { } },
             { name = "gibType", rval = "field_id", args = { } },
             { name = "has_flag", rval = "bool", args = { "string" } },
-            { name = "has_material", rval = "bool", args = { "string" } },
+            { name = "made_of", rval = "bool", args = { "string" } },
             { name = "has_special_attack", rval = "bool", args = { "string" } },
             { name = "in_category", rval = "bool", args = { "string" } },
             { name = "in_species", rval = "bool", args = { "species_id" } },
@@ -1953,7 +1952,6 @@ classes = {
             { name = "invoke", rval = "int", args = { "player", "item", "tripoint" } },
             { name = "invoke", rval = "int", args = { "player", "item", "tripoint", "string" } },
             { name = "is_food", rval = "bool", args = { } },
-            { name = "is_tool", rval = "bool", args = { } },
             { name = "maximum_charges", rval = "int", args = { } },
             { name = "nname", rval = "string", args = { "int" } },
             { name = "tick", rval = "int", args = { "player", "item", "tripoint" } },
@@ -2007,25 +2005,6 @@ classes = {
             { name = "get_item_type_string", rval = "string", args = { } },
             { name = "get_nutrition", rval = "int", args = { } },
             { name = "is_food", rval = "bool", args = { } },
-        }
-    },
-    it_tool = {
-        parent = "itype",
-        attributes = {
-            ammo_id = { type = "string", writable = true },
-            charges_per_use = { type = "int", writable = true },
-            def_charges = { type = "int", writable = true },
-            max_charges = { type = "int", writable = true },
-            revert_to = { type = "string", writable = true },
-            subtype = { type = "string", writable = true },
-            turns_per_charge = { type = "int", writable = true },
-        },
-        functions = {
-            { name = "charges_default", rval = "int", args = { } },
-            { name = "charges_to_use", rval = "int", args = { } },
-            { name = "get_item_type_string", rval = "string", args = { } },
-            { name = "is_tool", rval = "bool", args = { } },
-            { name = "maximum_charges", rval = "int", args = { } },
         }
     },
     w_point = {
@@ -2286,11 +2265,6 @@ global_functions = {
         args = { "mtype_id", "tripoint" },
         rval = "monster&",
         desc = "Creates and spawns a new monster of given type. Returns a refernce to it, *or* nil if it could not be spawned."
-    },
-    get_tool_type = {
-        cpp_name = "get_tool_type",
-        args = { "string" },
-        rval = "it_tool&"
     },
     get_calendar_turn = {
         cpp_name = "get_calendar_turn_wrapper",

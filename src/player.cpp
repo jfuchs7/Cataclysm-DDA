@@ -3959,8 +3959,8 @@ int player::sight_range(int light_level) const
         (1.0 / LIGHT_TRANSPARENCY_OPEN_AIR);
     // int range = log(light_level * LIGHT_AMBIENT_LOW) / LIGHT_TRANSPARENCY_OPEN_AIR;
 
-    // Clamp to sight_max.
-    return std::min(range, sight_max);
+    // Clamp to [1, sight_max].
+    return std::max( 1, std::min( range, sight_max ) );
 }
 
 int player::unimpaired_range() const
@@ -8472,8 +8472,8 @@ void player::vomit()
 void player::drench( int saturation, int flags, bool ignore_waterproof )
 {
     // OK, water gets in your AEP suit or whatever.  It wasn't built to keep you dry.
-    if ( has_trait("DEBUG_NOTEMP") || has_active_mutation("SHELL2") ||
-         ( !ignore_waterproof && is_waterproof(flags) ) ) {
+    if( has_trait("DEBUG_NOTEMP") || has_active_mutation("SHELL2") ||
+        ( !ignore_waterproof && is_waterproof(flags) ) ) {
         return;
     }
 
@@ -8489,12 +8489,8 @@ void player::drench( int saturation, int flags, bool ignore_waterproof )
             continue;
         }
         // Different sources will only make the bodypart wet to a limit
-        int source_wet_max = saturation / 2;
-        int wetness_increment = source_wet_max / 8;
-        // Make sure increment is at least 1
-        if( source_wet_max != 0 && wetness_increment == 0 ) {
-            wetness_increment = 1;
-        }
+        int source_wet_max = saturation * bp_wetness_max * 2 / 100;
+        int wetness_increment = ignore_waterproof ? 100 : 2;
         // Respect maximums
         const int wetness_max = std::min( source_wet_max, bp_wetness_max );
         if( body_wetness[i] < wetness_max ){
@@ -8614,7 +8610,7 @@ void player::update_body_wetness( const w_point &weather )
 {
     // Average number of turns to go from completely soaked to fully dry
     // assuming average temperature and humidity
-    constexpr int average_drying = HOURS(1);
+    constexpr int average_drying = HOURS(2);
 
     // A modifier on drying time
     double delay = 1.0;
@@ -8670,6 +8666,7 @@ void player::update_body_wetness( const w_point &weather )
             drying_chance = 1;
         }
 
+        // @todo Make evaporation reduce body heat
         if( drying_chance >= drying_roll ) {
             body_wetness[i] -= 1;
             if( body_wetness[i] < 0 ) {
@@ -9583,126 +9580,17 @@ bool player::can_wear( const item& it, bool alert ) const
     }
 
     if( !it.has_flag( "OVERSIZE" ) ) {
-        if( ( it.covers( bp_hand_l ) || it.covers( bp_hand_r ) ||
-              it.covers( bp_arm_l )  || it.covers( bp_arm_r )  ||
-              it.covers( bp_leg_l )  || it.covers( bp_leg_r )  ||
-              it.covers( bp_foot_l ) || it.covers( bp_foot_r ) ||
-              it.covers( bp_torso )  || it.covers( bp_head) ) &&
-            ( has_trait( "HUGE" ) || has_trait( "HUGE_OK" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "The %s is much too small to fit your huge body!" ), it.type_name().c_str() );
-            }
-            return false;
-        }
+        for( const std::string &mut : get_mutations() ) {
+            const auto &branch = mutation_branch::get( mut );
+            if( branch.conflicts_with_item( it ) ) {
+                if( alert ) {
+                    add_msg( m_info, _( "Your mutation %s prevents you from wearing that %s." ),
+                             branch.name.c_str(), it.type_name().c_str() );
+                }
 
-        if( ( it.covers( bp_hand_l ) || it.covers( bp_hand_r ) ) &&
-            ( has_trait( "ARM_TENTACLES" ) || has_trait( "ARM_TENTACLES_4" ) || has_trait( "ARM_TENTACLES_8" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot put %s over your tentacles." ), it.type_name().c_str() );
+                return false;
             }
-            return false;
         }
-
-        if( ( it.covers( bp_hand_l ) || it.covers( bp_hand_r ) ) && has_trait( "TALONS" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot put %s over your talons." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( ( it.covers( bp_hand_l ) || it.covers( bp_hand_r ) ) &&
-            ( has_trait( "PAWS" ) || has_trait( "PAWS_LARGE" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot get %s to stay on your paws." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_mouth ) && ( has_trait( "BEAK" ) || has_trait( "BEAK_PECK" ) || has_trait( "BEAK_HUM" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot put a %s over your beak." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_mouth ) &&
-            (has_trait( "MUZZLE" ) || has_trait( "MUZZLE_BEAR" ) || has_trait( "MUZZLE_LONG" ) || has_trait( "MUZZLE_RAT" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot fit the %s over your muzzle." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_mouth ) && has_trait( "MINOTAUR" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot fit the %s over your snout." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_mouth ) && has_trait( "SABER_TEETH" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "Your saber teeth are simply too large for %s to fit." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( it.covers(bp_mouth) && has_trait("MANDIBLES") ) {
-            if( alert ) {
-                add_msg_if_player(_("Your mandibles are simply too large for %s to fit."), it.type_name().c_str());
-            }
-            return false;
-        }
-
-        if( it.covers(bp_mouth) && has_trait( "PROBOSCIS" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "Your proboscis is simply too large for %s to fit." ), it.type_name().c_str() );
-            }
-            return false;
-        }
-
-        if( ( it.covers( bp_foot_l ) || it.covers( bp_foot_r ) ) && has_trait( "HOOVES" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot wear footwear on your hooves." ) );
-            }
-            return false;
-        }
-
-        if( ( it.covers( bp_foot_l ) || it.covers( bp_foot_r ) ) && has_trait( "LEG_TENTACLES" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot wear footwear on your tentacles." ) );
-            }
-            return false;
-        }
-
-        if( ( it.covers( bp_foot_l ) || it.covers( bp_foot_r ) ) && has_trait( "RAP_TALONS" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "Your talons are much too large for footgear." ) );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_head ) && has_trait( "HORNS_CURLED" ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot wear headgear over your horns." ) );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_torso ) && (has_trait( "SHELL" ) || has_trait( "SHELL2" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "You cannot fit that over your shell." ) );
-            }
-            return false;
-        }
-
-        if( it.covers( bp_torso ) && ( has_trait( "INSECT_ARMS" ) || has_trait( "ARACHNID_ARMS" ) ) ) {
-            if( alert ) {
-                add_msg_if_player( m_info, _( "Your new limbs are too wriggly to fit under that." ) );
-            }
-            return false;
-        }
-
         if( it.covers(bp_head) &&
             !it.made_of( "wool" ) && !it.made_of( "cotton" ) &&
             !it.made_of( "nomex" ) && !it.made_of( "leather" ) &&
@@ -10454,12 +10342,8 @@ hint_rating player::rate_action_disassemble( const item &it )
 hint_rating player::rate_action_use( const item &it ) const
 {
     if( it.is_tool() ) {
-        const auto tool = dynamic_cast<const it_tool*>(it.type);
-        if (tool->charges_per_use != 0 && it.charges < tool->charges_per_use) {
-            return HINT_IFFY;
-        } else {
-            return HINT_GOOD;
-        }
+        return it.ammo_remaining() < it.ammo_required() ? HINT_IFFY : HINT_GOOD;
+
     } else if (it.is_gunmod()) {
         ///\EFFECT_GUN >0 allows rating estimates for gun modifications
         if (get_skill_level( skill_gun ) == 0) {
@@ -10486,30 +10370,28 @@ hint_rating player::rate_action_use( const item &it ) const
 
 bool player::has_enough_charges( const item &it, bool show_msg ) const
 {
-    const it_tool *tool = dynamic_cast<const it_tool *>( it.type );
-    if( tool == NULL || tool->charges_per_use <= 0 ) {
-        // If the item is not a tool, it can always be invoked as it does not consume charges.
+    if( !it.is_tool() || !it.ammo_required() ) {
         return true;
     }
     if( it.has_flag( "USE_UPS" ) ) {
-        if( has_charges( "UPS", tool->charges_per_use ) || it.charges >= tool->charges_per_use ) {
+        if( has_charges( "UPS", it.ammo_required() ) || it.ammo_remaining() >= it.ammo_required() ) {
             return true;
         }
         if( show_msg ) {
             add_msg_if_player( m_info,
                     ngettext( "Your %s needs %d charge from some UPS.",
                               "Your %s needs %d charges from some UPS.",
-                              tool->charges_per_use ),
-                    it.tname().c_str(), tool->charges_per_use );
+                              it.ammo_required() ),
+                    it.tname().c_str(), it.ammo_required() );
         }
         return false;
-    } else if( it.charges < tool->charges_per_use ) {
+    } else if( it.ammo_remaining() < it.ammo_required() ) {
         if( show_msg ) {
             add_msg_if_player( m_info,
                     ngettext( "Your %s has %d charge but needs %d.",
                               "Your %s has %d charges but needs %d.",
-                              it.charges ),
-                    it.tname().c_str(), it.charges, tool->charges_per_use );
+                              it.ammo_remaining() ),
+                    it.tname().c_str(), it.ammo_remaining(), it.ammo_required() );
         }
         return false;
     }

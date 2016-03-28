@@ -747,6 +747,11 @@ public:
         bool is_dangerous() const; // Is it an active grenade or something similar that will hurt us?
 
         /**
+         * Is this item flexible enough to be worn on body parts like antlers?
+         */
+        bool is_soft() const;
+
+        /**
          * Does the item provide the artifact effect when it is wielded?
          */
         bool has_effect_when_wielded( art_effect_passive effect ) const;
@@ -1315,7 +1320,7 @@ public:
         /**
          * Returns the item type of the given identifier. Never returns null.
          */
-        static itype *find_type( const itype_id &id );
+        static const itype *find_type( const itype_id &id );
         /**
          * Whether the item is counted by charges, this is a static wrapper
          * around @ref count_by_charges, that does not need an items instance.

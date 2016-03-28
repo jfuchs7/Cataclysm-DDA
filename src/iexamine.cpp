@@ -598,7 +598,7 @@ void iexamine::controls_gate(player &p, const tripoint &examp)
         none( p, examp );
         return;
     }
-    g->open_gate( examp, g->m.ter( examp ) );
+    g->open_gate( examp );
 }
 
 void iexamine::cardreader(player &p, const tripoint &examp)
@@ -2529,7 +2529,7 @@ void iexamine::water_source(player &p, const tripoint &examp)
     p.activity.values.push_back(water.bday);
 }
 
-itype *furn_t::crafting_pseudo_item_type() const
+const itype * furn_t::crafting_pseudo_item_type() const
 {
     if (crafting_pseudo_item.empty()) {
         return NULL;
@@ -2537,14 +2537,13 @@ itype *furn_t::crafting_pseudo_item_type() const
     return item::find_type( crafting_pseudo_item );
 }
 
-itype *furn_t::crafting_ammo_item_type() const
+const itype *furn_t::crafting_ammo_item_type() const
 {
-    const it_tool *toolt = dynamic_cast<const it_tool *>(crafting_pseudo_item_type());
-    if (toolt != NULL && toolt->ammo_id != "NULL") {
-        const std::string ammoid = default_ammo(toolt->ammo_id);
-        return item::find_type( ammoid );
+    const itype *pseudo = crafting_pseudo_item_type();
+    if( pseudo->tool && pseudo->tool->ammo_id != "NULL" ) {
+        return item::find_type( default_ammo( pseudo->tool->ammo_id ) );
     }
-    return NULL;
+    return nullptr;
 }
 
 static long count_charges_in_list(const itype *type, const map_stack &items)
@@ -2560,8 +2559,8 @@ static long count_charges_in_list(const itype *type, const map_stack &items)
 void iexamine::reload_furniture(player &p, const tripoint &examp)
 {
     const furn_t &f = g->m.furn_at(examp);
-    itype *type = f.crafting_pseudo_item_type();
-    itype *ammo = f.crafting_ammo_item_type();
+    const itype *type = f.crafting_pseudo_item_type();
+    const itype *ammo = f.crafting_ammo_item_type();
     if (type == NULL || ammo == NULL) {
         add_msg(m_info, _("This %s can not be reloaded!"), f.name.c_str());
         return;
