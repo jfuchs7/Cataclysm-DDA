@@ -366,7 +366,6 @@ void Item_factory::init()
     iuse_function_list["BOLTCUTTERS"] = &iuse::boltcutters;
     iuse_function_list["MOP"] = &iuse::mop;
     iuse_function_list["SPRAY_CAN"] = &iuse::spray_can;
-    iuse_function_list["LAW"] = &iuse::LAW;
     iuse_function_list["HEATPACK"] = &iuse::heatpack;
     iuse_function_list["QUIVER"] = &iuse::quiver;
     iuse_function_list["TOWEL"] = &iuse::towel;
@@ -512,7 +511,7 @@ void Item_factory::check_definitions() const
         }
 
         for( auto mat_id : type->materials ) {
-            if( mat_id == "null" || !material_type::has_material(mat_id) ) {
+            if( mat_id.str() == "null" || !mat_id.is_valid() ) {
                 msg << string_format("invalid material %s", mat_id.c_str()) << "\n";
             }
         }
@@ -968,22 +967,24 @@ void Item_factory::load( islot_armor &slot, JsonObject &jo )
 
 void Item_factory::load( islot_tool &slot, JsonObject &jo )
 {
-    jo.read( "ammo", slot.ammo_id );
-    jo.read( "max_charges", slot.max_charges );
-    jo.read( "initial_charges", slot.def_charges );
-    jo.read( "charges_per_use", slot.charges_per_use );
-    jo.read( "turns_per_charge", slot.turns_per_charge );
-    jo.read( "revert_to", slot.revert_to );
-    jo.read( "revert_msg", slot.revert_msg );
-    jo.read( "sub", slot.subtype );
+    assign( jo, "ammo", slot.ammo_id );
+    assign( jo, "max_charges", slot.max_charges );
+    assign( jo, "initial_charges", slot.def_charges );
+    assign( jo, "charges_per_use", slot.charges_per_use );
+    assign( jo, "turns_per_charge", slot.turns_per_charge );
+    assign( jo, "revert_to", slot.revert_to );
+    assign( jo, "revert_msg", slot.revert_msg );
+    assign( jo, "sub", slot.subtype );
 }
 
 void Item_factory::load_tool(JsonObject &jo)
 {
-    auto def = new itype();
-    load_slot( def->tool, jo );
-    load_basic_info( jo, def );
-    load_slot( def->spawn, jo ); // @todo deprecate
+    auto def = load_definition( jo );
+    if( def ) {
+        load_slot( def->tool, jo );
+        load_basic_info( jo, def );
+        load_slot( def->spawn, jo ); // @todo deprecate
+    }
 }
 
 void Item_factory::load_tool_armor(JsonObject &jo)
@@ -1167,30 +1168,30 @@ void Item_factory::load_generic(JsonObject &jo)
 // Set for all items (not just food and clothing) to avoid edge cases
 void set_allergy_flags( itype &item_template )
 {
-    using material_allergy_pair = std::pair<std::string, std::string>;
+    using material_allergy_pair = std::pair<material_id, std::string>;
     static const std::vector<material_allergy_pair> all_pairs = {{
         // First allergens:
         // An item is an allergen even if it has trace amounts of allergenic material
-        std::make_pair( "hflesh", "CANNIBALISM" ),
+        std::make_pair( material_id( "hflesh" ), "CANNIBALISM" ),
 
-        std::make_pair( "hflesh", "ALLERGEN_MEAT" ),
-        std::make_pair( "iflesh", "ALLERGEN_MEAT" ),
-        std::make_pair( "flesh", "ALLERGEN_MEAT" ),
-        std::make_pair( "wheat", "ALLERGEN_WHEAT" ),
-        std::make_pair( "fruit", "ALLERGEN_FRUIT" ),
-        std::make_pair( "veggy", "ALLERGEN_VEGGY" ),
-        std::make_pair( "milk", "ALLERGEN_MILK" ),
-        std::make_pair( "egg", "ALLERGEN_EGG" ),
-        std::make_pair( "junk", "ALLERGEN_JUNK" ),
+        std::make_pair( material_id( "hflesh" ), "ALLERGEN_MEAT" ),
+        std::make_pair( material_id( "iflesh" ), "ALLERGEN_MEAT" ),
+        std::make_pair( material_id( "flesh" ), "ALLERGEN_MEAT" ),
+        std::make_pair( material_id( "wheat" ), "ALLERGEN_WHEAT" ),
+        std::make_pair( material_id( "fruit" ), "ALLERGEN_FRUIT" ),
+        std::make_pair( material_id( "veggy" ), "ALLERGEN_VEGGY" ),
+        std::make_pair( material_id( "milk" ), "ALLERGEN_MILK" ),
+        std::make_pair( material_id( "egg" ), "ALLERGEN_EGG" ),
+        std::make_pair( material_id( "junk" ), "ALLERGEN_JUNK" ),
         // Not food, but we can keep it here
-        std::make_pair( "wool", "ALLERGEN_WOOL" ),
+        std::make_pair( material_id( "wool" ), "ALLERGEN_WOOL" ),
         // Now "made of". Those flags should not be passed
-        std::make_pair( "flesh", "CARNIVORE_OK" ),
-        std::make_pair( "hflesh", "CARNIVORE_OK" ),
-        std::make_pair( "iflesh", "CARNIVORE_OK" ),
-        std::make_pair( "milk", "CARNIVORE_OK" ),
-        std::make_pair( "egg", "CARNIVORE_OK" ),
-        std::make_pair( "honey", "URSINE_HONEY" ),
+        std::make_pair( material_id( "flesh" ), "CARNIVORE_OK" ),
+        std::make_pair( material_id( "hflesh" ), "CARNIVORE_OK" ),
+        std::make_pair( material_id( "iflesh" ), "CARNIVORE_OK" ),
+        std::make_pair( material_id( "milk" ), "CARNIVORE_OK" ),
+        std::make_pair( material_id( "egg" ), "CARNIVORE_OK" ),
+        std::make_pair( material_id( "honey" ), "URSINE_HONEY" ),
     }};
 
     const auto &mats = item_template.materials;
@@ -1207,11 +1208,11 @@ void hflesh_to_flesh( itype &item_template )
 {
     auto &mats = item_template.materials;
     const auto old_size = mats.size();
-    mats.erase( std::remove( mats.begin(), mats.end(), "hflesh" ), mats.end() );
+    mats.erase( std::remove( mats.begin(), mats.end(), material_id( "hflesh" ) ), mats.end() );
     // Only add "flesh" material if not already present
     if( old_size != mats.size() &&
-        std::find( mats.begin(), mats.end(), "flesh" ) == mats.end() ) {
-        mats.push_back( "flesh" );
+        std::find( mats.begin(), mats.end(), material_id( "flesh" ) ) == mats.end() ) {
+        mats.push_back( material_id( "flesh" ) );
     }
 }
 
@@ -1228,7 +1229,7 @@ void Item_factory::load_basic_info(JsonObject &jo, itype *new_item_template)
     assign( jo, "weight", new_item_template->weight );
     assign( jo, "volume", new_item_template->volume );
     assign( jo, "price", new_item_template->price );
-    assign( jo, "price_post", new_item_template->price_post );
+    assign( jo, "price_postapoc", new_item_template->price_post );
     assign( jo, "stack_size", new_item_template->stack_size );
     assign( jo, "integral_volume", new_item_template->integral_volume );
     assign( jo, "bashing", new_item_template->melee_dam );
@@ -1262,8 +1263,8 @@ void Item_factory::load_basic_info(JsonObject &jo, itype *new_item_template)
         new_item_template->color = color_from_string( jo.get_string( "color" ) );
     }
 
-    if( jo.has_member( "material" ) ) {
-        set_material_from_json( jo, "material", new_item_template );
+    for( auto &m : jo.get_tags( "material" ) ) {
+        new_item_template->materials.push_back( material_id( m ) );
     }
 
     if( jo.has_string( "phase" ) ) {
@@ -1413,20 +1414,6 @@ std::bitset<num_bp> Item_factory::flags_from_json(JsonObject &jo, const std::str
     }
 
     return flag;
-}
-
-void Item_factory::set_material_from_json( JsonObject& jo, std::string member,
-                                           itype *new_item_template )
-{
-    if( jo.has_array(member) ) {
-        JsonArray jarr = jo.get_array(member);
-        for( int i = 0; i < (int)jarr.size(); ++i ) {
-            std::string material_id = jarr.get_string(i);
-            new_item_template->materials.push_back( material_id );
-        }
-    } else if( jo.has_string(member) ) {
-        new_item_template->materials.push_back( jo.get_string(member) );
-    }
 }
 
 void Item_factory::reset()
@@ -1645,6 +1632,8 @@ void Item_factory::set_use_methods_from_json( JsonObject &jo, std::string member
     if( !jo.has_member( member ) ) {
         return;
     }
+
+    use_methods.clear();
     if( jo.has_array( member ) ) {
         JsonArray jarr = jo.get_array( member );
         while( jarr.has_more() ) {

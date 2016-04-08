@@ -958,7 +958,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         // has_charges works ONLY for charges.
         std::list<item> use_amount( itype_id it, int quantity );
         bool use_charges_if_avail( itype_id it, long quantity );// Uses up charges
-        std::list<item> use_charges( itype_id it, long quantity );// Uses up charges
+
+        std::list<item> use_charges( const itype_id& what, long qty ); // Uses up charges
 
         bool has_charges( const itype_id &it, long quantity ) const;
         /** Returns the amount of item `type' that is currently worn */
@@ -1286,6 +1287,12 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
 
         bool query_yn( const char *mes, ... ) const override;
 
+        /**
+         * Has the item enough charges to invoke its use function?
+         * Also checks if UPS from this player is used instead of item charges.
+         */
+        bool has_enough_charges(const item &it, bool show_msg) const;
+
     protected:
         // The player's position on the local map.
         tripoint position;
@@ -1338,12 +1345,6 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         void use_fire(const int quantity);
 
         void react_to_felt_pain( int intensity );
-
-        /**
-         * Has the item enough charges to invoke its use function?
-         * Also checks if UPS from this player is used instead of item charges.
-         */
-        bool has_enough_charges(const item &it, bool show_msg) const;
 
         bool can_study_recipe(const itype &book) const;
         bool try_study_recipe(const itype &book);

@@ -218,8 +218,8 @@ item& item::deactivate( const Character *ch, bool alert )
 
 item& item::ammo_set( const itype_id& ammo, long qty )
 {
-    // if zero or negative qty try and completely fill the item
-    if( qty <= 0 ) {
+    // if negative qty completely fill the item
+    if( qty < 0 ) {
         if( magazine_integral() || magazine_current() ) {
             qty = ammo_capacity();
         } else {
@@ -227,10 +227,22 @@ item& item::ammo_set( const itype_id& ammo, long qty )
         }
     }
 
+    if( qty == 0 ) {
+        ammo_unset();
+        return *this;
+    }
+
+    // handle reloadable tools and guns with no specific ammo type as special case
+    if( ( is_tool() || is_gun() ) && magazine_integral() && ammo == "null" && ammo_type() == "NULL" ) {
+        curammo = nullptr;
+        charges = std::min( qty, ammo_capacity() );
+        return *this;
+    }
+
     // check ammo is valid for the item
     const itype *atype = item_controller->find_template( ammo );
-    if( qty <= 0 || !atype->ammo || atype->ammo->type != ammo_type() ) {
-        debugmsg( "Tried to set invalid ammo of %s (%i) for %s", atype->nname( qty ).c_str(), qty, tname().c_str() );
+    if( !atype->ammo || atype->ammo->type != ammo_type() ) {
+        debugmsg( "Tried to set invalid ammo of %s for %s", atype->nname( qty ).c_str(), tname().c_str() );
         return *this;
     }
 
@@ -679,7 +691,7 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
             insert_separation_line();
         }
 
-        const std::vector<material_type*> mat_types = made_of_types();
+        const std::vector<const material_type*> mat_types = made_of_types();
         if( !mat_types.empty() ) {
             std::string material_list;
             for( auto next_material : mat_types ) {
@@ -1239,61 +1251,34 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
 
         info.push_back( iteminfo( "CONTAINER", temp1.str() ) );
     }
+
     if( is_tool() ) {
-
         if( ammo_capacity() != 0 ) {
-            std::string temp_fmt;
+            info.emplace_back( "TOOL", string_format( _( "<bold>Charges</bold>: %d" ), ammo_remaining() ) );
+        }
 
-            info.push_back( iteminfo( "TOOL", string_format( _( "<bold>Charges</bold>: %d" ), ammo_remaining() ) ) );
-
-            if( !magazine_integral() ) {
-                insert_separation_line();
-                temp_fmt += _( "<bold>Compatible magazines:</bold> " );
-                const auto compat = magazine_compatible();
-                for( auto iter = compat.cbegin(); iter != compat.cend(); ++iter ) {
-                    if( iter != compat.cbegin() ) {
-                        temp_fmt += ", ";
-                    }
-                    temp_fmt += item_controller->find_template( *iter )->nname( 1 );
+        if( !magazine_integral() ) {
+            insert_separation_line();
+            std::string tmp = _( "<bold>Compatible magazines:</bold> " );
+            const auto compat = magazine_compatible();
+            for( auto iter = compat.cbegin(); iter != compat.cend(); ++iter ) {
+                if( iter != compat.cbegin() ) {
+                    tmp += ", ";
                 }
-            } else if( has_flag( "DOUBLE_AMMO" ) ) {
-                if( ammo_type() != "NULL" ) {
-                    //~ "%s" is ammunition type. This types can't be plural.
-                    temp_fmt = ngettext( "Maximum <num> charge (doubled) of %s.",
-                                         "Maximum <num> charges (doubled) of %s.",
-                                         ammo_capacity() );
-                    temp_fmt = string_format( temp_fmt, ammo_name( ammo_type() ).c_str() );
-                } else {
-                    temp_fmt = ngettext( "Maximum <num> charge (doubled).",
-                                         "Maximum <num> charges (doubled).",
-                                         ammo_capacity() );
-                }
-            } else if( has_flag( "ATOMIC_AMMO" ) ) {
-                if( ammo_type() != "NULL" ) {
-                    //~ "%s" is ammunition type. This types can't be plural.
-                    temp_fmt = ngettext( "Maximum <num> charge of %s.",
-                                         "Maximum <num> charges of %s.",
-                                         ammo_capacity() );
-                    temp_fmt = string_format( temp_fmt, ammo_name( "plutonium" ).c_str() );
-                } else {
-                    temp_fmt = ngettext( "Maximum <num> charge.",
-                                         "Maximum <num> charges.",
-                                         ammo_capacity() );
-                }
-            } else {
-                if( ammo_type() != "NULL" ) {
-                    //~ "%s" is ammunition type. This types can't be plural.
-                    temp_fmt = ngettext( "Maximum <num> charge of %s.",
-                                         "Maximum <num> charges of %s.",
-                                         ammo_capacity() );
-                    temp_fmt = string_format( temp_fmt, ammo_name( ammo_type() ).c_str() );
-                } else {
-                    temp_fmt = ngettext( "Maximum <num> charge.",
-                                         "Maximum <num> charges.",
-                                         ammo_capacity() );
-                }
+                tmp += item_controller->find_template( *iter )->nname( 1 );
             }
-            info.push_back( iteminfo( "TOOL", "", temp_fmt, ammo_capacity() ) );
+            info.emplace_back( "TOOL", tmp );
+
+        } else if( ammo_capacity() != 0 ) {
+            std::string tmp;
+            if( ammo_type() != "NULL" ) {
+                //~ "%s" is ammunition type. This types can't be plural.
+                tmp = ngettext( "Maximum <num> charge of %s.", "Maximum <num> charges of %s.", ammo_capacity() );
+                tmp = string_format( tmp, ammo_name( ammo_type() ).c_str() );
+            } else {
+                tmp = ngettext( "Maximum <num> charge.", "Maximum <num> charges.", ammo_capacity() );
+            }
+            info.emplace_back( "TOOL", "", tmp, ammo_capacity() );
         }
     }
 
@@ -2166,7 +2151,7 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
     else if (iname != item_vars.end()) {
         maintext = iname->second;
     }
-    else if (is_gun() && !contents.empty() ) {
+    else if( is_gun() || is_tool() || is_magazine() ) {
         ret.str("");
         ret << label(quantity);
         for( const auto mod : gunmods() ) {
@@ -2181,8 +2166,6 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
         ret << label(quantity);
         ret << "+";
         maintext = ret.str();
-    } else if( is_magazine() ) {
-        maintext = label( quantity );
     } else if (contents.size() == 1) {
         if(contents[0].made_of(LIQUID)) {
             maintext = rmp_format(_("<item_name>%s of %s"), label(quantity).c_str(), contents[0].tname( quantity, with_prefix ).c_str());
@@ -2304,7 +2287,7 @@ std::string item::display_name(unsigned int quantity) const
         // a book which has remaining unread chapters
         qty = string_format(" (%i)", get_remaining_chapters(g->u));
     } else if( ammo_capacity() > 0 ) {
-        // anything that can be reloaded including tools, guns and auxiliary gunmods
+        // anything that can be reloaded including tools, magazines, guns and auxiliary gunmods
         qty = string_format(" (%i)", ammo_remaining());
     } else if( is_ammo_container() && !contents.empty() ) {
         qty = string_format( " (%i)", contents[0].charges );
@@ -2329,12 +2312,13 @@ int item::price( bool practical ) const
 {
     int res = 0;
 
-    visit_items( [&res,&practical]( const item *e ) {
-        int child = practical ? e->type->price_post : e->type->price;
-
+    visit_items( [&res, practical]( const item *e ) {
         if( e->rotten() ) {
-            child /= 10; // @todo better price here calculation?
+            // @todo Special case things that stay useful when rotten
+            return VisitResponse::NEXT;
         }
+
+        int child = practical ? e->type->price_post : e->type->price;
         if( e->damage > 0 ) {
             // maximal damage is 4, maximal reduction is 40% of the value.
             child -= child * static_cast<double>( e->damage ) / 10;
@@ -2383,12 +2367,12 @@ int item::weight() const
             case MS_LARGE:  ret = 120000;  break;
             case MS_HUGE:   ret = 200000;  break;
         }
-        if( made_of( "veggy" ) ) {
+        if( made_of( material_id( "veggy" ) ) ) {
             ret /= 3;
         }
-        if( corpse->in_species( FISH ) || corpse->in_species( BIRD ) || corpse->in_species( INSECT ) || made_of( "bone" ) ) {
+        if( corpse->in_species( FISH ) || corpse->in_species( BIRD ) || corpse->in_species( INSECT ) || made_of( material_id( "bone" ) ) ) {
             ret /= 8;
-        } else if ( made_of( "iron" ) || made_of( "steel" ) || made_of( "stone" ) ) {
+        } else if ( made_of( material_id( "iron" ) ) || made_of( material_id( "steel" ) ) || made_of( material_id( "stone" ) ) ) {
             ret *= 7;
         }
 
@@ -2969,7 +2953,7 @@ int item::bash_resist( bool to_self ) const
         eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
-    const std::vector<material_type*> mat_types = made_of_types();
+    const std::vector<const material_type*> mat_types = made_of_types();
     if( !mat_types.empty() ) {
         for (auto mat : mat_types) {
             resist += mat->bash_resist();
@@ -3015,7 +2999,7 @@ int item::cut_resist( bool to_self ) const
         eff_thickness = std::max( 1, get_thickness() - eff_damage );
     }
 
-    const std::vector<material_type*> mat_types = made_of_types();
+    const std::vector<const material_type*> mat_types = made_of_types();
     if( !mat_types.empty() ) {
         for( auto mat : mat_types ) {
             resist += mat->cut_resist();
@@ -3045,7 +3029,7 @@ int item::acid_resist( bool to_self ) const
         return 0.0;
     }
 
-    const std::vector<material_type*> mat_types = made_of_types();
+    const std::vector<const material_type*> mat_types = made_of_types();
     if( !mat_types.empty() ) {
         // Not sure why cut and bash get an armor thickness bonus but acid doesn't,
         // but such is the way of the code.
@@ -3073,7 +3057,7 @@ int item::fire_resist( bool to_self ) const
         return 0.0;
     }
 
-    const std::vector<material_type*> mat_types = made_of_types();
+    const std::vector<const material_type*> mat_types = made_of_types();
     if( !mat_types.empty() ) {
         for( auto mat : mat_types ) {
             resist += mat->fire_resist();
@@ -3154,7 +3138,7 @@ bool item::is_two_handed( const player &u ) const
     return ((weight() / 113) > u.str_cur * 4);
 }
 
-const std::vector<std::string> &item::made_of() const
+const std::vector<material_id> &item::made_of() const
 {
     if( is_corpse() ) {
         return corpse->mat;
@@ -3162,16 +3146,16 @@ const std::vector<std::string> &item::made_of() const
     return type->materials;
 }
 
-std::vector<material_type*> item::made_of_types() const
+std::vector<const material_type*> item::made_of_types() const
 {
-    std::vector<material_type*> material_types_composed_of;
+    std::vector<const material_type*> material_types_composed_of;
     for (auto mat_id : made_of()) {
-        material_types_composed_of.push_back(material_type::find_material(mat_id));
+        material_types_composed_of.push_back( &mat_id.obj() );
     }
     return material_types_composed_of;
 }
 
-bool item::made_of_any( const std::vector<std::string> &mat_idents ) const
+bool item::made_of_any( const std::vector<material_id> &mat_idents ) const
 {
     for( auto candidate_material : mat_idents ) {
         for( auto target_material : made_of() ) {
@@ -3183,7 +3167,7 @@ bool item::made_of_any( const std::vector<std::string> &mat_idents ) const
     return false;
 }
 
-bool item::only_made_of( const std::vector<std::string> &mat_idents ) const
+bool item::only_made_of( const std::vector<material_id> &mat_idents ) const
 {
     for( auto target_material : made_of() ) {
         if( std::find( mat_idents.begin(), mat_idents.end(), target_material ) == mat_idents.end() ) {
@@ -3193,7 +3177,7 @@ bool item::only_made_of( const std::vector<std::string> &mat_idents ) const
     return true;
 }
 
-bool item::made_of( const std::string &mat_ident ) const
+bool item::made_of( const material_id &mat_ident ) const
 {
     const auto &materials = made_of();
     return std::find( materials.begin(), materials.end(), mat_ident ) != materials.end();
@@ -3570,17 +3554,17 @@ void item::mark_chapter_as_read( const player &u )
 const material_type &item::get_random_material() const
 {
     if( type->materials.empty() ) {
-        return *material_type::find_material( "null" );
+        return material_id( "null" ).obj();
     }
-    return *material_type::find_material( random_entry( type->materials ) );
+    return random_entry( type->materials ).obj();
 }
 
 const material_type &item::get_base_material() const
 {
     if( type->materials.empty() ) {
-        return *material_type::find_material( "null" );
+        return material_id( "null" ).obj();
     }
-    return *material_type::find_material( type->materials.front() );
+    return type->materials.front().obj();
 }
 
 bool item::operator<(const item& other) const
@@ -3982,10 +3966,10 @@ long item::ammo_required() const
     return 0;
 }
 
-bool item::ammo_consume( int qty, const tripoint& pos ) {
+long item::ammo_consume( long qty, const tripoint& pos ) {
     if( qty < 0 ) {
         debugmsg( "Cannot consume negative quantity of ammo for %s", tname().c_str() );
-        return false;
+        return 0;
     }
 
     item *mag = magazine_current();
@@ -4006,33 +3990,31 @@ bool item::ammo_consume( int qty, const tripoint& pos ) {
         return res;
     }
 
-    if( qty > ammo_remaining() ) {
-        return false;
-    }
-
     if( is_magazine() ) {
+        auto need = qty;
         while( contents.size() ) {
             auto& e = *contents.rbegin();
-            if( qty >= e.charges ) {
-                qty -= e.charges;
+            if( need >= e.charges ) {
+                need -= e.charges;
                 contents.pop_back();
             } else {
-                e.charges -= qty;
+                e.charges -= need;
+                need = 0;
                 break;
             }
         }
-        return true;
-    }
+        return qty - need;
 
-    if( is_tool() || is_gun() ) {
+    } else if( is_tool() || is_gun() ) {
+        qty = std::min( qty, charges );
         charges -= qty;
         if( charges == 0 ) {
             curammo = nullptr;
         }
-        return true;
+        return qty;
     }
 
-    return false;
+    return 0;
 }
 
 const itype * item::ammo_data() const
@@ -4631,20 +4613,20 @@ bool item::flammable() const
         return true;
     }
 
-    if( made_of("nomex") ) {
+    if( made_of( material_id( "nomex" ) ) ) {
         return false;
     }
 
-    if( made_of("paper") || made_of("powder") || made_of("plastic") ) {
+    if( made_of( material_id( "paper" ) ) || made_of( material_id( "powder" ) ) || made_of( material_id( "plastic" ) ) ) {
         return true;
     }
 
     int vol = volume();
-    if( ( made_of( "wood" ) || made_of( "veggy" ) ) && ( burnt < 1 || vol <= 10 ) ) {
+    if( ( made_of( material_id( "wood" ) ) || made_of( material_id( "veggy" ) ) ) && ( burnt < 1 || vol <= 10 ) ) {
         return true;
     }
 
-    if( ( made_of("cotton") || made_of("wool") ) && ( burnt / ( vol + 1 ) <= 1 ) ) {
+    if( ( made_of( material_id( "cotton" ) ) || made_of( material_id( "wool" ) ) ) && ( burnt / ( vol + 1 ) <= 1 ) ) {
         return true;
     }
 
@@ -4841,36 +4823,59 @@ bool item::fill_with( item &liquid, std::string &err, bool allow_bucket )
     return true;
 }
 
-bool item::use_charges(const itype_id &it, long &quantity, std::list<item> &used)
+bool item::use_charges( const itype_id& what, long& qty, std::list<item>& used, const tripoint& pos )
 {
-    // First, check contents
-    for( auto a = contents.begin(); a != contents.end() && quantity > 0; ) {
-        if (a->use_charges(it, quantity, used)) {
-            a = contents.erase(a);
+    std::vector<item *> del;
+
+    visit_items( [&what, &qty, &used, &pos, &del] ( item *e ) {
+        if( qty == 0 ) {
+             // found sufficient charges
+            return VisitResponse::ABORT;
+        }
+
+        if( e->is_tool() ) {
+            // for tools we also need to check if this item is a subtype of the required id
+            if( e->typeId() == what || e->type->tool->subtype == what ) {
+                int n = std::min( e->ammo_remaining(), qty );
+                qty -= n;
+
+                used.push_back( item( *e ).ammo_set( e->ammo_current(), n ) );
+                e->ammo_consume( n, pos );
+            }
+            return VisitResponse::SKIP;
+
+        } else if( e->count_by_charges() ) {
+            if( e->typeId() == what ) {
+
+                // if can supply excess charges split required off leaving remainder in-situ
+                item obj = e->split( qty );
+                if( !obj.is_null() ) {
+                    used.push_back( obj );
+                    qty = 0;
+                    return VisitResponse::ABORT;
+                }
+
+                qty -= e->charges;
+                used.push_back( *e );
+                del.push_back( e );
+            }
+            // items counted by charges are not themselves expected to be containers
+            return VisitResponse::SKIP;
+        }
+
+        // recurse through any nested containers
+        return VisitResponse::NEXT;
+    } );
+
+    bool destroy = false;
+    for( auto e : del ) {
+        if( e == this ) {
+            destroy = true; // cannot remove ourself...
         } else {
-            ++a;
+            remove_item( *e );
         }
     }
-    // Now check the item itself
-    if( !( typeId() == it || ( is_tool() && type->tool->subtype == it ) ) ||
-        quantity <= 0 || !contents.empty() ) {
-        return false;
-    }
-    if (charges <= quantity) {
-        used.push_back(*this);
-        if (charges < 0) {
-            quantity--;
-        } else {
-            quantity -= charges;
-        }
-        charges = 0;
-        return destroyed_at_zero_charges();
-    }
-    used.push_back(*this);
-    used.back().charges = quantity;
-    charges -= quantity;
-    quantity = 0;
-    return false;
+    return destroy;
 }
 
 void item::set_snippet( const std::string &snippet_id )
@@ -5369,51 +5374,35 @@ bool item::process_wet( player * /*carrier*/, const tripoint & /*pos*/ )
 
 bool item::process_tool( player *carrier, const tripoint &pos )
 {
-    long charges_used = 0;
-    // Some tools (bombs) use charges as a countdown timer.
     if( type->tool->turns_per_charge > 0 && int( calendar::turn ) % type->tool->turns_per_charge == 0 ) {
-        charges_used = 1;
-    }
-    if( charges_used > 0 ) {
-        // UPS charges can only be taken from a player, it does not work
-        // when the item is on the ground.
-        if( carrier != nullptr && has_flag( "USE_UPS" ) ) {
-            //With the new UPS system, we'll want to use any charges built up in the tool before pulling from the UPS
-            if( charges > charges_used ) {
-                charges -= charges_used;
-                charges_used = 0;
-            } else if( carrier->use_charges_if_avail( "UPS", charges_used ) ) {
-                charges_used = 0;
+        auto qty = std::max( ammo_required(), 1L );
+        qty -= ammo_consume( qty, pos );
+
+        // for items in player possession if insufficient charges within tool try UPS
+        if( carrier && has_flag( "USE_UPS" ) ) {
+            if( carrier->use_charges_if_avail( "UPS", qty ) ) {
+                qty = 0;
             }
-        } else if( charges > 0 ) {
-            charges -= charges_used;
-            charges_used = 0;
+        }
+
+        // if insufficient available charges shutdown the tool
+        if( qty > 0 ) {
+            if( carrier && has_flag( "USE_UPS" ) ) {
+                carrier->add_msg_if_player( m_info, _( "You need an UPS to run the %s!" ), tname().c_str() );
+            }
+
+            auto revert = type->tool->revert_to; // invoking the object can convert the item to another type
+            type->invoke( carrier != nullptr ? carrier : &g->u, this, pos );
+            if( revert == "null" ) {
+                return true;
+            } else {
+                deactivate( carrier );
+                return false;
+            }
         }
     }
-    // charges_used is 0 when the tool did not require charges at
-    // this turn or the required charges have been consumed.
-    // Otherwise the required charges are not available, shut the tool down.
-    if( charges_used == 0 ) {
-        // TODO: iuse functions should expect a nullptr as player, but many of them
-        // don't and therefore will fail.
-        type->tick( carrier != nullptr ? carrier : &g->u, this, pos );
-        if( charges == -1 ) {
-            // Signal that the item has destroyed itself.
-            return true;
-        }
-    } else {
-        if( carrier != nullptr && has_flag( "USE_UPS" ) && charges < charges_used ) {
-            carrier->add_msg_if_player( m_info, _( "You need an UPS to run %s!" ), tname().c_str() );
-        }
-        // TODO: iuse functions should expect a nullptr as player, but many of them
-        // don't and therefor will fail.
-        type->invoke( carrier != nullptr ? carrier : &g->u, this, pos );
-        if( type->tool->revert_to == "null" ) {
-            return true; // reverts to nothing -> destroy the item
-        }
-        deactivate( carrier );
-    }
-    // Keep the item
+
+    type->tick( carrier != nullptr ? carrier : &g->u, this, pos );
     return false;
 }
 
@@ -5464,8 +5453,8 @@ bool item::process( player *carrier, const tripoint &pos, bool activate )
         // DO NOT process this as a tool! It really isn't!
         return process_cable(carrier, pos);
     }
-    if( is_tool() && process_tool( carrier, pos ) ) {
-        return true;
+    if( is_tool() ) {
+        return process_tool( carrier, pos );
     }
     return false;
 }
@@ -5572,8 +5561,8 @@ bool item::is_soft() const
 {
     // @todo Make this a material property
     // @todo Add a SOFT flag (for chainmail and the like)
-    static const std::vector<std::string> soft_mats = {{
-        "cotton", "leather", "wool", "nomex"
+    static const std::vector<material_id> soft_mats = {{
+        material_id( "cotton" ), material_id( "leather" ), material_id( "wool" ), material_id( "nomex" )
     }};
 
     return made_of_any( soft_mats );

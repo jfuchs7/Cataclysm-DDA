@@ -27,6 +27,7 @@ using mtype_id = string_id<mtype>;
 struct islot_armor;
 struct use_function;
 class material_type;
+using material_id = string_id<material_type>;
 class item_category;
 using ammotype = std::string;
 using itype_id = std::string;
@@ -375,27 +376,16 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      */
     int reach_range() const;
 
- /**
-  * Consume a specific amount of charges from items of a specific type.
-  * This includes this item, and any of its contents (recursively).
-  * @param it The type id, only items of this type are considered.
-  * @param quantity The number of charges that should be consumed.
-  * It will be changed for each used charge. After calling this function it
-  * may be at 0 which means all requested charges have been consumed.
-  * @param used All used charges are put into this list, the caller may need it.
-  * @return Whether this item should be deleted (in which case it returns true).
-  * Some items (those that are counted by charges) must be destroyed when
-  * their charges reach 0.
-  * This is usually does not apply to tools.
-  * Also if this function is called on a container and the function erase charges
-  * from its contents the container should not be deleted - it returns false in
-  * that case.
-  * The caller *must* check the return value and remove the item from wherever
-  * it is stored when the function returns true.
-  * Note that the item itself has no way of knowing where it is stored and can
-  * therefor not delete itself.
-  */
- bool use_charges(const itype_id &it, long &quantity, std::list<item> &used);
+    /**
+     * Consumes specified charges (or fewer) from this and any contained items
+     * @param what specific type of charge required, eg. 'battery'
+     * @param qty maximum charges to consume. On return set to number of charges not found (or zero)
+     * @param used filled with duplicates of each item that provided consumed charges
+     * @param pos position at which the charges are being consumed
+     * @return true if this item should be deleted (count-by-charges items with no remaining charges)
+     */
+    bool use_charges( const itype_id& what, long& qty, std::list<item>& used, const tripoint& pos );
+
  /**
   * Consume a specific amount of items of a specific type.
   * This includes this item, and any of its contents (recursively).
@@ -564,28 +554,28 @@ public:
      * This may return an empty vector.
      * The returned vector does not contain the null id.
      */
-    const std::vector<std::string> &made_of() const;
+    const std::vector<material_id> &made_of() const;
     /**
      * Same as @ref made_of(), but returns the @ref material_type directly.
      */
-    std::vector<material_type*> made_of_types() const;
+    std::vector<const material_type*> made_of_types() const;
     /**
      * Check we are made of at least one of a set (e.g. true if even
      * one item of the passed in set matches any material).
      * @param mat_idents Set of material ids.
      */
-    bool made_of_any( const std::vector<std::string> &mat_idents ) const;
+    bool made_of_any( const std::vector<material_id> &mat_idents ) const;
     /**
      * Check we are made of only the materials (e.g. false if we have
      * one material not in the set).
      * @param mat_idents Set of material ids.
      */
-    bool only_made_of( const std::vector<std::string> &mat_idents ) const;
+    bool only_made_of( const std::vector<material_id> &mat_idents ) const;
     /**
      * Check we are made of this material (e.g. matches at least one
      * in our set.)
      */
-    bool made_of( const std::string &mat_ident ) const;
+    bool made_of( const material_id &mat_ident ) const;
     /**
      * Are we solid, liquid, gas, plasma?
      */
@@ -1110,9 +1100,15 @@ public:
         long ammo_capacity() const;
         /** Quantity of ammunition consumed per usage of tool or with each shot of gun */
         long ammo_required() const;
-        /** If sufficient ammo available consume it, otherwise do nothing and return false
-         *  @param pos current location of item, used for ejecting magazines and similar effects */
-        bool ammo_consume( int qty, const tripoint& pos );
+
+        /**
+         * Consume ammo (if available) and return the amount of ammo that was consumed
+         * @param qty maximum amount of ammo that should be consumed
+         * @param pos current location of item, used for ejecting magazines and similar effects
+         * @return amount of ammo consumed which will be between 0 and @ref qty
+         */
+        long ammo_consume( long qty, const tripoint& pos );
+
         /** Specific ammo data, returns nullptr if item is neither ammo nor loaded with any */
         const itype * ammo_data() const;
         /** Specific ammo type, returns "null" if item is neither ammo nor loaded with any */
