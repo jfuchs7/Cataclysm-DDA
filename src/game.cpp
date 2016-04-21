@@ -235,7 +235,6 @@ void game::load_static_data()
     init_mapgen_builtin_functions();
     init_fields();
     init_savedata_translation_tables();
-    init_npctalk();
     init_artifacts();
     init_faction_data();
 
@@ -2644,6 +2643,7 @@ bool game::handle_action()
                 examine( mouse_target );
             } else {
                 examine();
+                refresh_all();
             }
             break;
 
@@ -3907,20 +3907,6 @@ void game::add_event(event_type type, int on_turn, int faction_id, const tripoin
     event tmp( type, on_turn, faction_id, center );
     events.push_back(tmp);
 }
-
-struct terrain {
-    ter_id ter;
-    terrain(ter_id tid) : ter(tid) {};
-    terrain(std::string sid)
-    {
-        ter = t_null;
-        if (termap.find(sid) == termap.end()) {
-            debugmsg("terrain '%s' does not exist.", sid.c_str());
-        } else {
-            ter = termap[sid].loadid;
-        }
-    };
-};
 
 bool game::event_queued(event_type type) const
 {
@@ -6001,9 +5987,6 @@ int game::mon_info(WINDOW *w)
         }
         if( m != nullptr ) {
             auto &critter = *m;
-            if(critter.type->has_flag(MF_VERMIN)) {
-                continue;
-            }
 
             monster_attitude matt = critter.attitude(&u);
             if (MATT_ATTACK == matt || MATT_FOLLOW == matt) {
@@ -7238,12 +7221,13 @@ void game::open()
     bool didit = m.open_door( openp, !m.is_outside( u.pos() ) );
 
     if (!didit) {
-        const std::string terid = m.get_ter( openp );
-        if (terid.find("t_door") != std::string::npos) {
-            if (terid.find("_locked") != std::string::npos) {
+        const ter_str_id tid = m.get_ter( openp );
+
+        if( tid.str().find("t_door") != std::string::npos ) {
+            if( tid.str().find("_locked") != std::string::npos ) {
                 add_msg(m_info, _("The door is locked!"));
                 return;
-            } else if (!termap[terid].close.empty() && termap[terid].close != "t_null") {
+            } else if ( tid.obj().close ) {
                 // if the following message appears unexpectedly, the prior check was for t_door_o
                 add_msg(m_info, _("That door is already open."));
                 u.moves += 100;
@@ -7670,7 +7654,7 @@ bool game::forced_door_closing( const tripoint &p, const ter_id door_type, int b
             add_msg(_("The %1$s hits the %2$s."), door_name.c_str(), zombie(cindex).name().c_str());
         }
         monster &critter = zombie( cindex );
-        if (critter.type->size <= MS_SMALL || critter.has_flag(MF_VERMIN)) {
+        if( critter.type->size <= MS_SMALL ) {
             critter.die_in_explosion( nullptr );
         } else {
             critter.apply_damage( nullptr, bp_torso, bash_dmg );
@@ -8398,6 +8382,10 @@ void game::print_terrain_info( const tripoint &lp, WINDOW *w_look, int column, i
     } else {
         mvwprintw(w_look, line, column, _("%s; Movement cost %d"), tile.c_str(),
                   m.move_cost(lp) * 50);
+
+        const auto ll = get_light_level(std::max(1.0, LIGHT_AMBIENT_LIT - m.ambient_light_at(lp) + 1.0));
+        mvwprintw(w_look, ++line, column, _("Lighting: "));
+        wprintz(w_look, ll.second, ll.first.c_str());
     }
 
     std::string signage = m.get_signage( lp );
@@ -11410,8 +11398,12 @@ void game::reload( int pos, bool prompt )
         std::stringstream ss;
         ss << pos;
 
-        long fetch = !opt.ammo->is_ammo_container() ? opt.qty() : 1;
-        u.assign_activity( ACT_RELOAD, opt.moves(), opt.qty(), opt.ammo.obtain( u, fetch ), ss.str() );
+        // store moves and qty locally as obtain() will invalidate the reload_option
+        int mv = opt.moves();
+        long qty = opt.qty();
+        int pos = opt.ammo.obtain( u, !opt.ammo->is_ammo_container() ? qty : 1 );
+
+        u.assign_activity( ACT_RELOAD, mv, qty, pos, ss.str() );
 
         u.inv.restack( &u );
     }
@@ -11584,8 +11576,9 @@ bool game::unload( item &it )
         item ammo( target->ammo_current(), calendar::turn, qty );
 
         if( ammo.made_of( LIQUID ) ) {
-            add_or_drop_with_msg( u, ammo );
-            qty -= ammo.charges;
+            if( !add_or_drop_with_msg( u, ammo ) ) {
+                qty -= ammo.charges; // only handled part (or none) of the liquid
+            }
             if( qty <= 0 ) {
                 return false; // no liquid was moved
             }
@@ -11954,7 +11947,7 @@ bool game::plmove(int dx, int dy, int dz)
     // Check if our movement is actually an attack on a monster or npc
     int mondex = mon_at( dest_loc, true );
     int npcdex = npc_at( dest_loc );
-    // Are we displacing a monster?  If it's vermin, always.
+    // Are we displacing a monster?
 
     bool attacking = false;
     if( mondex != -1 || npcdex != -1 ){
@@ -11969,8 +11962,7 @@ bool game::plmove(int dx, int dy, int dz)
     if( mondex != -1 ) {
         monster &critter = zombie(mondex);
         if( critter.friendly == 0 &&
-            !critter.has_effect( effect_pet) &&
-            !critter.type->has_flag(MF_VERMIN) ) {
+            !critter.has_effect( effect_pet) ) {
             if (u.has_destination()) {
                 add_msg(m_warning, _("Monster in the way. Auto-move canceled."));
                 add_msg(m_info, _("Click directly on monster to attack."));
@@ -12096,10 +12088,22 @@ bool game::plmove(int dx, int dy, int dz)
     }
 
     // Invalid move
-    const bool waste_moves = u.has_effect( effect_blind ) || u.worn_with_flag("BLIND") || u.has_active_bionic("bio_blindfold") || u.has_effect( effect_stunned );
+    const bool waste_moves = u.is_blind() || u.has_active_bionic("bio_blindfold") || u.has_effect( effect_stunned );
     if( waste_moves || dest_loc.z != u.posz() ) {
+        std::string obstacle_name;
+        int part;
+        vehicle *veh = m.veh_at( dest_loc, part );
+        if( veh != nullptr ) {
+            // redefine variable as id of obstacle part
+            part = veh->obstacle_at_part( part );
+            if( part > 0 ) {
+                obstacle_name = veh->parts[part].info().name;
+            }
+        } else {
+            obstacle_name = m.name( dest_loc );
+        }
+        add_msg( _( "You bump into a %s!" ), obstacle_name.c_str() );
         // Only lose movement if we're blind
-        add_msg(_("You bump into a %s!"), m.name(dest_loc).c_str());
         if( waste_moves ) {
             u.moves -= 100;
         }

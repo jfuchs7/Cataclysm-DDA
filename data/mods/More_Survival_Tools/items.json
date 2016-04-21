@@ -14,7 +14,6 @@
     "bashing": 2,
     "to_hit": -1,
     "max_charges": 50,
-    "initial_charges": 0,
     "charges_per_use": 1,
     "turns_per_charge": 0,
     "ammo": "tinder",
@@ -35,7 +34,6 @@
     "bashing": 2,
     "to_hit": -1,
     "max_charges": 50,
-    "initial_charges": 0,
     "charges_per_use": 1,
     "turns_per_charge": 300,
     "ammo": "tinder",
@@ -65,7 +63,6 @@
     "volume": 1,
     "cutting": -5,
     "to_hit": -1,
-    "ammo": "NULL",
     "max_charges": 2000,
     "initial_charges": 2000,
     "charges_per_use": 1,
@@ -84,9 +81,7 @@
     "material": "steel",
     "weight": 500,
     "volume": 2,
-    "to_hit": 0,
     "max_charges": 100,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
     "ammo": "tinder",
@@ -110,9 +105,7 @@
     "material": "iron",
     "weight": 500,
     "volume": 2,
-    "to_hit": 0,
     "max_charges": 100,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 600,
     "ammo": "tinder",
@@ -160,7 +153,6 @@
     "use_action" : "MISC_REPAIR",
     "stim" : 0,
     "container" : "null",
-    "to_hit" : 0,
     "comestible_type" : "MED",
     "symbol" : ";",
     "quench" : 0,
@@ -189,7 +181,6 @@
     "volume" : 2,
     "weight" : 574,
     "bashing" : 14,
-    "to_hit" : 0,
     "ammo_type" : "thrown",
     "damage" : 0,
     "range" : 0,
@@ -213,11 +204,8 @@
     "bashing": 5,
     "cutting": 3,
     "to_hit": -1,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "use_action": { "type": "knife" },
     "qualities": [["CUT", 1], ["BUTCHER", 6], ["SAW_W", 1], ["AXE", 1], ["HAMMER", 1]],
     "flags": ["CHOP"]
@@ -381,11 +369,8 @@
     "volume": 7,
     "bashing": 1,
     "to_hit": -1,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "use_action": {
       "type": "delayed_transform",
       "transform_age": 28800, "//": "2 days",
@@ -411,11 +396,8 @@
     "volume": 14,
     "bashing": 2,
     "to_hit": -1,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "use_action": {
       "type": "delayed_transform",
       "transform_age": 36000, "//": "2 and a half days",
@@ -441,11 +423,8 @@
     "volume": 21,
     "bashing": 3,
     "to_hit": -1,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "use_action": {
       "type": "delayed_transform",
       "transform_age": 43200, "//": "3 days",
@@ -484,7 +463,6 @@
     "addiction_type" : "none",
     "spoils_in" : 280,
     "stim" : 0,
-    "to_hit" : 0,
     "comestible_type" : "FOOD",
     "symbol" : "%",
     "quench" : 0,
@@ -621,12 +599,8 @@
     "bashing": 11,
     "cutting": 8,
     "flags" : ["CHOP"],
-    "to_hit": 0,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "qualities": [["AXE", 2]],
     "use_action": "LUMBER"
   },{
@@ -642,12 +616,8 @@
     "volume": 16,
     "bashing": 15,
     "cutting": 1,
-    "to_hit": 0,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
-    "ammo": "NULL",
     "qualities": [["DIG", 2]],
     "use_action": "DIG"
   },{
@@ -662,7 +632,6 @@
     "weight": 1,
     "volume": 1,
     "to_hit": -3,
-    "ammo": "NULL",
     "category": "tools",
     "use_action": [
       {
@@ -679,8 +648,6 @@
         "need_sunlight": true
       }
     ],
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
     "turns_per_charge": 0,
     "flags": ["THERMOMETER", "LENS"]
@@ -698,10 +665,7 @@
     "volume": 4,
     "bashing": 3,
     "to_hit": -4,
-    "max_charges": 0,
-    "initial_charges": 0,
     "charges_per_use": 0,
-    "turns_per_charge": 0,
-    "ammo": "NULL"
+    "turns_per_charge": 0
   }
 ]

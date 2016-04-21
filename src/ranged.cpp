@@ -117,7 +117,8 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
     projectile &proj = attack.proj;
     const auto &proj_effects = proj.proj_effects;
 
-    const bool stream = proj_effects.count("FLAME") > 0 ||
+    const bool stream = proj_effects.count("STREAM") > 0 ||
+                        proj_effects.count("STREAM_BIG") ||
                         proj_effects.count("JET") > 0;
     const bool no_item_damage = proj_effects.count( "NO_ITEM_DAMAGE" ) > 0;
     const bool do_draw_line = proj_effects.count( "DRAW_AS_LINE" ) > 0;
@@ -1571,11 +1572,9 @@ void splatter( const std::vector<tripoint> &trajectory, int dam, const Creature 
 
     if( !target->is_npc() && !target->is_player() ) {
         //Check if the creature isn't an NPC or the player (so the cast works)
-        const monster *mon = dynamic_cast<const monster *>(target);
-        if (mon->is_hallucination() || !mon->made_of( material_id( "flesh" ) ) ||
-            mon->has_flag( MF_VERMIN)) {
-            // If it is a hallucination, not made of flesh, or a vermin creature,
-            // don't splatter the blood.
+        const monster *mon = dynamic_cast<const monster *>( target );
+        if( mon->is_hallucination() || !mon->made_of( material_id( "flesh" ) ) ) {
+            // If it is a hallucination or not made of flesh don't splatter the blood.
             return;
         }
     }

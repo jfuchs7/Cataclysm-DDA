@@ -69,7 +69,6 @@ const mtype_id mon_mi_go( "mon_mi_go" );
 const mtype_id mon_secubot( "mon_secubot" );
 const mtype_id mon_sewer_snake( "mon_sewer_snake" );
 const mtype_id mon_shoggoth( "mon_shoggoth" );
-const mtype_id mon_spider_trapdoor( "mon_spider_trapdoor" );
 const mtype_id mon_spider_web( "mon_spider_web" );
 const mtype_id mon_tankbot( "mon_tankbot" );
 const mtype_id mon_triffid( "mon_triffid" );
@@ -532,10 +531,12 @@ void mapgen_function_json::setup_setmap( JsonArray &parray ) {
             std::string tmpid = pjo.get_string("id");
             switch( tmpop ) {
                 case JMAPGEN_SETMAP_TER: {
-                    if ( termap.find( tmpid ) == termap.end() ) {
+                    const ter_str_id tid( tmpid );
+
+                    if( !tid.is_valid() ) {
                         pjo.throw_error( "no such terrain", "id" );
                     }
-                    tmp_i.val = termap[ tmpid ].loadid;
+                    tmp_i.val = tid.id();
                 } break;
                 case JMAPGEN_SETMAP_FURN: {
                     if ( furnmap.find( tmpid ) == furnmap.end() ) {
@@ -1087,24 +1088,9 @@ public:
 class jmapgen_terrain : public jmapgen_piece {
 public:
     ter_id id;
-    jmapgen_terrain( JsonObject &jsi ) : jmapgen_piece()
-    , id( 0 )
-    {
-        const auto iter = termap.find( jsi.get_string( "ter" ) );
-        if( iter == termap.end() ) {
-            jsi.throw_error( "unknown terrain type", "ter" );
-        }
-        id = iter->second.loadid;
-    }
-    jmapgen_terrain( const std::string &tid ) : jmapgen_piece()
-    , id( 0 )
-    {
-        const auto iter = termap.find( tid );
-        if( iter == termap.end() ) {
-            throw std::runtime_error( "unknown terrain type" );
-        }
-        id = iter->second.loadid;
-    }
+    jmapgen_terrain( JsonObject &jsi ) : jmapgen_terrain( jsi.get_string( "ter" ) ) {}
+
+    jmapgen_terrain( const std::string &ter_name ) : jmapgen_piece(), id( ter_id( ter_name ) ) {}
     void apply( map &m, const jmapgen_int &x, const jmapgen_int &y, const float /*mdensity*/ ) const override
     {
         m.ter_set( x.get(), y.get(), id );
@@ -1131,11 +1117,7 @@ public:
         }
         jsi.read( "items", items );
         if( jsi.has_string( "floor_type" ) ) {
-            const auto iter = termap.find( jsi.get_string( "floor_type" ) );
-            if( iter == termap.end() ) {
-                jsi.throw_error( "unknown terrain type", "floor_type" );
-            }
-            floor_type = iter->second.loadid;
+            floor_type = ter_id( jsi.get_string( "floor_type" ) );
         }
         jsi.read( "overwrite", overwrite );
     }
@@ -1333,7 +1315,7 @@ bool mapgen_function_json::setup() {
         }
         JsonObject jo = jsin.get_object();
         bool qualifies = false;
-        std::string tmpval = "";
+        ter_str_id tmpval;
         JsonArray parray;
         JsonArray sparray;
         JsonObject pjo;
@@ -1341,12 +1323,9 @@ bool mapgen_function_json::setup() {
 
         // something akin to mapgen fill_background.
         if ( jo.read("fill_ter", tmpval) ) {
-            if ( termap.find( tmpval ) == termap.end() ) {
-                jo.throw_error(string_format("  fill_ter: invalid terrain '%s'",tmpval.c_str() ));
-            }
-            fill_ter = termap[ tmpval ].loadid;
+            fill_ter = tmpval.id();
             qualifies = true;
-            tmpval = "";
+            tmpval = NULL_ID;
         }
 
         format.resize( mapgensize * mapgensize );
@@ -1364,12 +1343,7 @@ bool mapgen_function_json::setup() {
                         pjo.throw_error( "format map key must be 1 character", key );
                     }
                     if( pjo.has_string( key ) ) {
-                        const auto tmpval = pjo.get_string( key );
-                        const auto iter = termap.find( tmpval );
-                        if( iter == termap.end() ) {
-                            pjo.throw_error( "Invalid terrain", key );
-                        }
-                        format_terrain[key[0]] = iter->second.loadid;
+                        format_terrain[key[0]] = ter_id( pjo.get_string( key ) );
                     } else {
                         auto &vect = format_placings[ key[0] ];
                         ::load_place_mapings<jmapgen_terrain>( pjo, key, vect );
@@ -10103,8 +10077,6 @@ FFFFFFFFFFFFFFFFFFFFFFFF\n\
         }
         ter_set(rng(3, SEEX * 2 - 4), rng(3, SEEY * 2 - 4), t_slope_up);
         place_items("spider", 85, 0, 0, SEEX * 2 - 1, SEEY * 2 - 1, false, 0);
-        add_spawn(mon_spider_trapdoor, 1, rng(3, SEEX * 2 - 5), rng(3, SEEY * 2 - 4));
-
 
     } else if (terrain_type == "anthill") {
 
@@ -10695,11 +10667,13 @@ std::vector<item *> map::place_items( items_location loc, int chance, int x1, in
         }
     }
     for( auto e : res ) {
-        if( rng( 0, 99 ) < magazine && !e->magazine_integral() && !e->magazine_current() ) {
-            e->contents.emplace_back( e->magazine_default(), e->bday );
-        }
-        if( rng( 0, 99 ) < ammo && e->ammo_type() != "NULL" && e->ammo_remaining() == 0 ) {
-            e->ammo_set( default_ammo( e->ammo_type() ), e->ammo_capacity() );
+        if( e->is_tool() || e->is_gun() || e->is_magazine() ) {
+            if( rng( 0, 99 ) < magazine && !e->magazine_integral() && !e->magazine_current() ) {
+                e->contents.emplace_back( e->magazine_default(), e->bday );
+            }
+            if( rng( 0, 99 ) < ammo && e->ammo_type() != "NULL" && e->ammo_remaining() == 0 ) {
+                e->ammo_set( default_ammo( e->ammo_type() ), e->ammo_capacity() );
+            }
         }
     }
     return res;
