@@ -753,6 +753,19 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                                              g->u.has_artifact_with( AEP_SUPER_CLAIRVOYANCE ) ) ) ) ) {
             info.push_back( iteminfo( "FOOD", _( "Smells like: " ) + food_item->corpse->nname() ) );
         }
+
+        std::string vits;
+        for( const auto &v : g->u.vitamins_from( *food_item ) ) {
+            if( v.second != 0 ) {
+                if( !vits.empty() ) {
+                    vits += ", ";
+                }
+                vits += string_format( "%s (%i)", v.first.obj().name().c_str(), v.second );
+            }
+        }
+        if( !vits.empty() ) {
+            info.emplace_back( "FOOD", _( "Vitamins: " ), vits.c_str() );
+        }
     }
 
     if( is_magazine() && !has_flag( "NO_RELOAD" ) ) {
@@ -2497,6 +2510,11 @@ int item::volume( bool integral ) const
     return ret;
 }
 
+int item::lift_strength() const
+{
+    return weight() / STR_LIFT_FACTOR + ( weight() % STR_LIFT_FACTOR != 0 );
+}
+
 int item::attack_time() const
 {
     int ret = 65 + 4 * volume() + weight() / 60;
@@ -2657,19 +2675,6 @@ int item::get_quality( const std::string &quality_id ) const
     }
 
     return return_quality;
-}
-
-bool item::has_quality( std::string quality_id ) const
-{
-    return has_quality( quality_id, 1 );
-}
-
-bool item::has_quality( std::string quality_id, int quality_value ) const
-{
-    if( get_quality( quality_id ) >= quality_value ) {
-        return true;
-    }
-    return false;
 }
 
 bool item::has_technique( const matec_id & tech ) const
@@ -3423,12 +3428,12 @@ bool item::is_container_empty() const
     return contents.empty();
 }
 
-bool item::is_container_full() const
+bool item::is_container_full( bool allow_bucket ) const
 {
     if( is_container_empty() ) {
         return false;
     }
-    return get_remaining_capacity_for_liquid( contents[0] ) == 0;
+    return get_remaining_capacity_for_liquid( contents[0], allow_bucket ) == 0;
 }
 
 bool item::is_salvageable() const
