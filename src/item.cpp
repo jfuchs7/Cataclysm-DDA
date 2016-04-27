@@ -33,6 +33,7 @@
 #include "catacharset.h"
 #include "cata_utility.h"
 #include "input.h"
+#include "fault.h"
 
 #include <cmath> // floor
 #include <sstream>
@@ -423,6 +424,9 @@ bool item::stacks_with( const item &rhs ) const
         return false;
     }
     if( item_tags != rhs.item_tags ) {
+        return false;
+    }
+    if( faults != rhs.faults ) {
         return false;
     }
     if( techniques != rhs.techniques ) {
@@ -1648,26 +1652,28 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                                       _( "* This object is <neutral>surrounded</neutral> by a <info>sickly green glow</info>." ) ) );
         }
 
-        if( is_food() && has_flag( "CANNIBALISM" ) ) {
-            if( !g->u.has_trait_flag( "CANNIBAL" ) ) {
-                info.push_back( iteminfo( "DESCRIPTION",
-                                          _( "* This food contains <bad>human flesh</bad>." ) ) );
-            } else {
-                info.push_back( iteminfo( "DESCRIPTION",
-                                          _( "* This food contains <good>human flesh</good>." ) ) );
+        if( is_food() ) {
+            if( has_flag( "CANNIBALISM" ) ) {
+                if( !g->u.has_trait_flag( "CANNIBAL" ) ) {
+                    info.emplace_back( "DESCRIPTION", _( "* This food contains <bad>human flesh</bad>." ) );
+                } else {
+                    info.emplace_back( "DESCRIPTION", _( "* This food contains <good>human flesh</good>." ) );
+                }
             }
-        }
 
-        ///\EFFECT_SURVIVAL >=3 allows detection of poisonous food
-        if( is_food() && has_flag( "HIDDEN_POISON" ) && g->u.skillLevel( skill_survival ).level() >= 3 ) {
-            info.push_back( iteminfo( "DESCRIPTION",
-                                      _( "* On closer inspection, this appears to be <bad>poisonous</bad>." ) ) );
-        }
+            if( is_tainted() ) {
+                info.emplace_back( "DESCRIPTION", _( "* This food is <bad>tainted</bad> and will poison you." ) );
+            }
 
-        ///\EFFECT_SURVIVAL >=5 allows detection of hallucinogenic food
-        if( is_food() && has_flag( "HIDDEN_HALLU" ) && g->u.skillLevel( skill_survival ).level() >= 5 ) {
-            info.push_back( iteminfo( "DESCRIPTION",
-                                      _( "* On closer inspection, this appears to be <neutral>hallucinogenic</neutral>." ) ) );
+            ///\EFFECT_SURVIVAL >=3 allows detection of poisonous food
+            if( has_flag( "HIDDEN_POISON" ) && g->u.skillLevel( skill_survival ).level() >= 3 ) {
+                info.emplace_back( "DESCRIPTION", _( "* On closer inspection, this appears to be <bad>poisonous</bad>." ) );
+            }
+
+            ///\EFFECT_SURVIVAL >=5 allows detection of hallucinogenic food
+            if( has_flag( "HIDDEN_HALLU" ) && g->u.skillLevel( skill_survival ).level() >= 5 ) {
+                info.emplace_back( "DESCRIPTION", _( "* On closer inspection, this appears to be <neutral>hallucinogenic</neutral>." ) );
+            }
         }
 
         if( is_brewable() || ( !contents.empty() && contents[0].is_brewable() ) ) {
@@ -1697,6 +1703,12 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                                           string_format( _( "* Fermenting this will produce <neutral>%s</neutral>." ),
                                                          item::nname( res, brewed.charges ).c_str() ) ) );
             }
+        }
+
+        for( const auto &e : faults ) {
+            //~ %1$s is the name of a fault and %2$s is the description of the fault
+            info.emplace_back( "DESCRIPTION", string_format( _( "* <bad>Faulty %1$s</bad>.  %2$s" ),
+                               e.obj().name().c_str(), e.obj().description().c_str() ) );
         }
 
         ///\EFFECT_MELEE >2 allows seeing melee damage stats on weapons
@@ -1902,6 +1914,11 @@ int item::get_free_mod_locations( const std::string &location ) const
         }
     }
     return result;
+}
+
+int item::engine_displacement() const
+{
+    return type->engine ? type->engine->displacement : 0;
 }
 
 char item::symbol() const
@@ -2128,13 +2145,16 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
         }
     }
 
+    if( !faults.empty() ) {
+        damtext.insert( 0, _( "faulty " ) );
+    }
+
     std::string vehtext = "";
-    if( is_var_veh_part() ) {
+    if( is_engine() && engine_displacement() > 0 ) {
+        vehtext = rmp_format( _( "<veh_adj>%2.1fL " ), engine_displacement() / 100.0f );
+
+    } else if( is_var_veh_part() ) {
         switch( type->variable_bigness->bigness_aspect ) {
-            case BIGNESS_ENGINE_DISPLACEMENT:
-                //~ liters, e.g. 3.21-Liter V8 engine
-                vehtext = rmp_format( _( "<veh_adj>%4.2f-Liter " ), bigness / 100.0f );
-                break;
             case BIGNESS_WHEEL_DIAMETER:
                 //~ inches, e.g. 20" wheel
                 vehtext = rmp_format( _( "<veh_adj>%d\" " ), bigness );
@@ -3438,6 +3458,16 @@ bool item::is_bucket() const
 bool item::is_bucket_nonempty() const
 {
     return is_bucket() && !is_container_empty();
+}
+
+bool item::is_engine() const
+{
+    return type->engine.get() != nullptr;
+}
+
+bool item::is_faulty() const
+{
+    return is_engine() ? !faults.empty() : false;
 }
 
 bool item::is_container_empty() const
@@ -5651,6 +5681,11 @@ bool item::is_dangerous() const
     return std::any_of( contents.begin(), contents.end(), []( const item &it ) {
         return it.is_dangerous();
     } );
+}
+
+bool item::is_tainted() const
+{
+    return corpse && corpse->has_flag( MF_POISON );
 }
 
 bool item::is_soft() const

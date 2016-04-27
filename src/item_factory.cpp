@@ -47,6 +47,9 @@ static std::set<std::string> item_options;
 
 std::unique_ptr<Item_factory> item_controller( new Item_factory() );
 
+static void set_allergy_flags( itype &item_template );
+static void hflesh_to_flesh( itype &item_template );
+
 bool item_is_blacklisted(const std::string &id)
 {
     if (item_whitelist.count(id) > 0) {
@@ -117,6 +120,9 @@ void Item_factory::finalize() {
         if( obj.gun ) {
             obj.gun->reload_noise = _( obj.gun->reload_noise.c_str() );
         }
+
+        set_allergy_flags( *e.second );
+        hflesh_to_flesh( *e.second );
 
         // default vitamins of healthy comestibles to their edible base materials if none explicitly specified
         if( obj.comestible && obj.comestible->vitamins.empty() && obj.comestible->healthy >= 0 ) {
@@ -266,11 +272,6 @@ void Item_factory::init()
 {
     //Populate the iuse functions
     iuse_function_list["NONE"] = use_function();
-    iuse_function_list["RAW_MEAT"] = &iuse::raw_meat;
-    iuse_function_list["RAW_FAT"] = &iuse::raw_fat;
-    iuse_function_list["RAW_BONE"] = &iuse::raw_bone;
-    iuse_function_list["RAW_FISH"] = &iuse::raw_fish;
-    iuse_function_list["RAW_WILDVEG"] = &iuse::raw_wildveg;
     iuse_function_list["SEWAGE"] = &iuse::sewage;
     iuse_function_list["HONEYCOMB"] = &iuse::honeycomb;
     iuse_function_list["ROYAL_JELLY"] = &iuse::royal_jelly;
@@ -562,6 +563,15 @@ void Item_factory::check_definitions() const
         if( type->default_container != "null" && !has_template( type->default_container ) ) {
             msg << string_format( "invalid container property %s", type->default_container.c_str() ) << "\n";
         }
+
+        if( type->engine ) {
+            for( const auto& f : type->engine->faults ) {
+                if( !f.is_valid() ) {
+                    msg << string_format( "invalid item fault %s", f.c_str() ) << "\n";
+                }
+            }
+        }
+
         if( type->comestible ) {
             if( type->comestible->tool != "null" ) {
                 auto req_tool = find_template( type->comestible->tool );
@@ -863,17 +873,17 @@ typename std::enable_if<std::is_integral<T>::value, bool>::type assign(
 }
 
 template <typename T>
-typename std::enable_if<std::is_same<T, std::string>::value, bool>::type assign(
+typename std::enable_if<std::is_constructible<T, std::string>::value, bool>::type assign(
     JsonObject &jo, const std::string& name, T& val ) {
     return jo.read( name, val );
 }
 
 template <typename T>
-typename std::enable_if<std::is_same<T, std::set<std::string>>::value, bool>::type assign(
-    JsonObject &jo, const std::string& name, T& val ) {
+typename std::enable_if<std::is_constructible<T, std::string>::value, bool>::type assign(
+    JsonObject &jo, const std::string& name, std::set<T>& val ) {
 
     if( jo.has_string( name ) || jo.has_array( name ) ) {
-        val = jo.get_tags( name );
+        val = jo.get_tags<T>( name );
         return true;
     }
 
@@ -881,14 +891,14 @@ typename std::enable_if<std::is_same<T, std::set<std::string>>::value, bool>::ty
 
     auto add = jo.get_object( "extend" );
     if( add.has_string( name ) || add.has_array( name ) ) {
-        auto tags = add.get_tags( name );
+        auto tags = add.get_tags<T>( name );
         val.insert( tags.begin(), tags.end() );
         res = true;
     }
 
     auto del = jo.get_object( "delete" );
     if( del.has_string( name ) || del.has_array( name ) ) {
-        for( const auto& e : del.get_tags( name ) ) {
+        for( const auto& e : del.get_tags<T>( name ) ) {
             val.erase( e );
         }
         res = true;
@@ -916,6 +926,21 @@ void Item_factory::load_ammo(JsonObject &jo)
     auto def = load_definition( jo );
     if( def) {
         load_slot( def->ammo, jo );
+        load_basic_info( jo, def );
+    }
+}
+
+void Item_factory::load( islot_engine &slot, JsonObject &jo )
+{
+    assign( jo, "displacement", slot.displacement );
+    assign( jo, "faults", slot.faults );
+}
+
+void Item_factory::load_engine( JsonObject &jo )
+{
+    auto def = load_definition( jo );
+    if( def) {
+        load_slot( def->engine, jo );
         load_basic_info( jo, def );
     }
 }
@@ -1039,21 +1064,24 @@ void Item_factory::load_tool_armor(JsonObject &jo)
 
 void Item_factory::load( islot_book &slot, JsonObject &jo )
 {
-    slot.level = jo.get_int( "max_level" );
-    slot.req = jo.get_int( "required_level" );
-    slot.fun = jo.get_int( "fun" );
-    slot.intel = jo.get_int( "intelligence" );
-    slot.time = jo.get_int( "time" );
-    slot.skill = skill_id( jo.get_string( "skill" ) );
-    slot.chapters = jo.get_int( "chapters", -1 );
+    assign( jo, "max_level", slot.level );
+    assign( jo, "required_level", slot.req );
+    assign( jo, "fun", slot.fun );
+    assign( jo, "intelligence", slot.intel );
+    assign( jo, "time", slot.time );
+    assign( jo, "skill", slot.skill );
+    assign( jo, "chapters", slot.chapters );
+
     set_use_methods_from_json( jo, "use_action", slot.use_methods );
 }
 
 void Item_factory::load_book( JsonObject &jo )
 {
-    itype *new_item_template = new itype();
-    load_slot( new_item_template->book, jo );
-    load_basic_info( jo, new_item_template );
+    auto def = load_definition( jo );
+    if( def) {
+        load_slot( def->book, jo );
+        load_basic_info( jo, def );
+    }
 }
 
 void Item_factory::load( islot_comestible &slot, JsonObject &jo )
@@ -1065,6 +1093,7 @@ void Item_factory::load( islot_comestible &slot, JsonObject &jo )
     assign( jo, "fun", slot.fun );
     assign( jo, "stim", slot.stim );
     assign( jo, "healthy", slot.healthy );
+    assign( jo, "parasites", slot.parasites );
 
     if( jo.read( "spoils_in", slot.spoils ) ) {
         slot.spoils *= 600; // JSON specifies hours so convert to turns
@@ -1234,8 +1263,6 @@ void Item_factory::load( islot_variable_bigness &slot, JsonObject &jo )
     const std::string big_aspect = jo.get_string( "bigness-aspect" );
     if( big_aspect == "WHEEL_DIAMETER" ) {
         slot.bigness_aspect = BIGNESS_WHEEL_DIAMETER;
-    } else if( big_aspect == "ENGINE_DISPLACEMENT" ) {
-        slot.bigness_aspect = BIGNESS_ENGINE_DISPLACEMENT;
     } else {
         jo.throw_error( "invalid bigness-aspect", "bigness-aspect" );
     }
@@ -1258,7 +1285,7 @@ void Item_factory::load_generic(JsonObject &jo)
 
 // Adds allergy flags to items with allergenic materials
 // Set for all items (not just food and clothing) to avoid edge cases
-void set_allergy_flags( itype &item_template )
+static void set_allergy_flags( itype &item_template )
 {
     using material_allergy_pair = std::pair<material_id, std::string>;
     static const std::vector<material_allergy_pair> all_pairs = {{
@@ -1433,10 +1460,6 @@ void Item_factory::load_basic_info(JsonObject &jo, itype *new_item_template)
     load_slot_optional( new_item_template->seed, jo, "seed_data" );
     load_slot_optional( new_item_template->artifact, jo, "artifact_data" );
     load_slot_optional( new_item_template->brewable, jo, "brewable" );
-    // Make sure this one is at/near the end
-    // TODO: Get rid of it when it is no longer needed (unless it's desired here)
-    set_allergy_flags( *new_item_template );
-    hflesh_to_flesh( *new_item_template );
 }
 
 void Item_factory::load_item_category(JsonObject &jo)

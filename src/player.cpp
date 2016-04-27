@@ -50,8 +50,10 @@
 #include "cata_utility.h"
 #include "overlay_ordering.h"
 #include "vitamin.h"
+#include "fault.h"
 
 #include <map>
+#include <iterator>
 
 #ifdef TILES
 #include "SDL2/SDL.h"
@@ -76,6 +78,7 @@ const mtype_id mon_shadow_snake( "mon_shadow_snake" );
 
 const skill_id skill_dodge( "dodge" );
 const skill_id skill_gun( "gun" );
+const skill_id skill_mechanics( "mechanics" );
 const skill_id skill_swimming( "swimming" );
 const skill_id skill_throw( "throw" );
 const skill_id skill_unarmed( "unarmed" );
@@ -5217,6 +5220,13 @@ void player::update_body( int from, int to )
             if( qty > 0 ) {
                 vitamin_mod( v.first, 0 - qty );
             }
+
+        } else if ( rate < 0 ) {
+            // mutations can result in vitamins being generated (but never accumulated)
+            int qty = ticks_between( from, to, MINUTES( std::abs( rate ) ) );
+            if( qty > 0 ) {
+                vitamin_mod( v.first, qty );
+            }
         }
     }
 
@@ -5251,7 +5261,6 @@ void player::get_sick()
     const int checks_per_year = 2 * 24 * 365;
 
     // Health is in the range [-200,200].
-    // A character who takes vitamins every 6 hours will have ~50 health.
     // Diseases are half as common for every 50 health you gain.
     float health_factor = std::pow(2.0f, get_healthy() / 50.0f);
 
@@ -5277,9 +5286,7 @@ void player::get_sick()
 void player::update_health(int external_modifiers)
 {
     if( has_artifact_with( AEP_SICK ) ) {
-        // Carrying a sickness artifact makes your health 50 points worse on
-        // average.  This is the negative equivalent of eating vitamins every
-        // 6 hours.
+        // Carrying a sickness artifact makes your health 50 points worse on average
         external_modifiers -= 50;
     }
     Character::update_health( external_modifiers );
@@ -5928,7 +5935,7 @@ void player::print_health() const
             message = _("You feel cruddy. Maybe you should consider eating a bit healthier.");
             break;
         case 1:
-            message = _("You get up with a bit of a scratch in your throat. Might be time for some vitamins.");
+            message = _("You get up with a bit of a scratch in your throat.");
             break;
         case 2:
             message = _("You stretch, but your muscles don't seem to be doing so good today.");
@@ -7460,7 +7467,7 @@ void player::hardcoded_effects(effect &it)
 
         bool woke_up = false;
         int tirednessVal = rng(5, 200) + rng(0, abs(get_fatigue() * 2 * 5));
-        if (!is_blind() && !has_active_bionic("bio_blindfold")) {
+        if( !is_blind() ) {
             if (has_trait("HEAVYSLEEPER2") && !has_trait("HIBERNATE")) {
                 // So you can too sleep through noon
                 if ((tirednessVal * 1.25) < g->m.ambient_light_at(pos()) && (get_fatigue() < 10 || one_in(get_fatigue() / 2))) {
@@ -8185,7 +8192,6 @@ void player::suffer()
 
     if( !radiogenic && radiation > 0 ) {
         // Even if you heal the radiation itself, the damage is done.
-        // Until you heal it with vitamins...
         const int hmod = get_healthy_mod();
         if( hmod > 200 - radiation ) {
             set_healthy_mod( std::max( -200, 200 - radiation ) );
@@ -9913,6 +9919,88 @@ bool player::dispose_item( item& obj, const std::string& prompt )
     return false;
 }
 
+void player::mend_item( item_location&& obj, bool interactive )
+{
+    std::vector<std::pair<const fault *, bool>> faults;
+    std::transform( obj->faults.begin(), obj->faults.end(), std::back_inserter( faults ), []( const fault_id& e ) {
+        return std::make_pair<const fault *, bool>( &e.obj(), false );
+    } );
+
+    if( faults.empty() ) {
+        if( interactive ) {
+            add_msg( m_info, _( "The %s doesn't have any faults to mend." ), obj->tname().c_str() );
+        }
+        return;
+    }
+
+    auto inv = crafting_inventory();
+
+    for( auto& f : faults ) {
+        f.second = f.first->requirements().can_make_with_inventory( inv );
+    }
+
+    int sel = 0;
+    if( interactive ) {
+        uimenu menu;
+        menu.text = _( "Mend which fault?" );
+        menu.return_invalid = true;
+        menu.desc_enabled = true;
+        menu.desc_lines = 12;
+
+        int w = 80;
+
+        for( auto& f : faults ) {
+            auto reqs = f.first->requirements();
+            auto tools = reqs.get_folded_tools_list( w, c_white, inv );
+            auto comps = reqs.get_folded_components_list( w, c_white, inv );
+
+            std::ostringstream descr;
+            descr << _( "<color_white>Skills:</color>\n" );
+            for( const auto& e : f.first->skills() ) {
+                bool hasSkill = skillLevel( skill_mechanics ) >= e.second;
+                f.second -= !hasSkill;
+                descr << string_format( "> <color_%1$s>%2$s %3$i</color>\n", hasSkill ? "c_green" : "c_red",
+                                        _( e.first.obj().name().c_str() ), e.second );
+            }
+
+            std::copy( tools.begin(), tools.end(), std::ostream_iterator<std::string>( descr, "\n" ) );
+            std::copy( comps.begin(), comps.end(), std::ostream_iterator<std::string>( descr, "\n" ) );
+
+            auto name = f.first->name();
+            name += std::string( std::max( w - utf8_width( name, true ), 0 ), ' ' );
+
+            menu.addentry_desc( -1, true, -1, name, descr.str() );
+        }
+        menu.query();
+        if( menu.ret < 0 ) {
+            add_msg( _( "Never mind." ) );
+            return;
+        }
+        sel = menu.ret;
+    }
+
+    // @todo convert this in to a long activity
+    if( sel >= 0 ) {
+        if( !faults[ sel ].second ) {
+            if( interactive ) {
+                add_msg( m_info, _( "You are currently unable to mend the %s." ), obj->tname().c_str() );
+            }
+            return;
+        }
+
+        const auto& reqs = faults[ sel ].first->requirements();
+        for( const auto& e : reqs.get_components() ) {
+            consume_items( e );
+        }
+        for( const auto& e : reqs.get_tools() ) {
+            consume_tools( e );
+        }
+        invalidate_crafting_inventory();
+
+        obj->faults.erase( faults[ sel ].first->id() );
+    }
+}
+
 int player::item_handling_cost( const item& it, bool effects, int factor ) const {
     int mv = std::max( 1, it.volume() * factor );
 
@@ -10276,6 +10364,15 @@ hint_rating player::rate_action_unload( const item &it ) const
     }
 
     return HINT_CANT;
+}
+
+hint_rating player::rate_action_mend( const item &it ) const
+{
+    // @todo check also if item damage could be repaired via a tool
+    if( !it.faults.empty() ) {
+        return HINT_GOOD;
+    }
+    return !it.type->engine || it.type->engine->faults.empty() ? HINT_CANT : HINT_IFFY;
 }
 
 hint_rating player::rate_action_disassemble( const item &it )
@@ -11483,7 +11580,7 @@ float player::fine_detail_vision_mod() const
     // PER_SLIME_OK implies you can get enough eyes around the bile
     // that you can generaly see.  There'll still be the haze, but
     // it's annoying rather than limiting.
-    if( is_blind() || has_active_bionic("bio_blindfold") ||
+    if( is_blind() ||
          ( ( has_effect( effect_boomered ) || has_effect( effect_darkness ) ) && !has_trait( "PER_SLIME_OK" ) ) ) {
         return 11.0;
     }

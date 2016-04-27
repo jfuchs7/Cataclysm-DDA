@@ -370,87 +370,6 @@ int iuse::atomic_caff(player *p, item *it, bool, const tripoint& )
     return it->type->charges_to_use();
 }
 
-struct parasite_chances {
-    int tapeworm;
-    int bloodworms;
-    int brainworms;
-    int paincysts;
-};
-
-int raw_food(player *p, item *it, const struct parasite_chances &pcs)
-{
-    if( p->is_npc() ) {
-        // NPCs don't need to eat, so they don't need to eat raw food
-        return 0;
-    }
-    if (p->has_bionic("bio_digestion") || p->has_trait("PARAIMMUNE")) {
-        return it->type->charges_to_use();
-    }
-    if (pcs.tapeworm > 0 && one_in(pcs.tapeworm) && !(p->has_effect( effect_tapeworm)
-            || p->has_trait("EATHEALTH"))) {
-           // Hyper-Metabolism digests the thing before it can set up shop.
-        p->add_effect( effect_tapeworm, 1, num_bp, true);
-    }
-    if (pcs.bloodworms > 0 && one_in(pcs.bloodworms) && !(p->has_effect( effect_bloodworms)
-           || p->has_trait("ACIDBLOOD"))) {
-           // The worms can't survive in acidic blood.
-        p->add_effect( effect_bloodworms, 1, num_bp, true);
-    }
-    if (pcs.brainworms > 0 && one_in(pcs.brainworms) && !p->has_effect( effect_brainworms)) {
-        p->add_effect( effect_brainworms, 1, num_bp, true);
-    }
-    if (pcs.paincysts > 0 && one_in(pcs.paincysts) && !p->has_effect( effect_paincysts)) {
-        p->add_effect( effect_paincysts, 1, num_bp, true);
-    }
-    return it->type->charges_to_use();
-}
-
-int iuse::raw_meat(player *p, item *it, bool, const tripoint& )
-{
-    struct parasite_chances pcs = {0, 0, 0, 0};
-    pcs.tapeworm = 32;
-    pcs.bloodworms = 64;
-    pcs.brainworms = 128;
-    pcs.paincysts = 64;
-    return raw_food(p, it, pcs);
-}
-
-int iuse::raw_fat(player *p, item *it, bool, const tripoint& )
-{
-    struct parasite_chances pcs = {0, 0, 0, 0};
-    pcs.tapeworm = 64;
-    pcs.bloodworms = 128;
-    pcs.brainworms = 128;
-    return raw_food(p, it, pcs);
-}
-
-int iuse::raw_bone(player *p, item *it, bool, const tripoint& )
-{
-    struct parasite_chances pcs = {0, 0, 0, 0};
-    pcs.bloodworms = 128;
-    return raw_food(p, it, pcs);
-}
-
-int iuse::raw_fish(player *p, item *it, bool, const tripoint& )
-{
-    struct parasite_chances pcs = {0, 0, 0, 0};
-    pcs.tapeworm = 256;
-    pcs.bloodworms = 256;
-    pcs.brainworms = 256;
-    pcs.paincysts = 256;
-    return raw_food(p, it, pcs);
-}
-
-int iuse::raw_wildveg(player *p, item *it, bool, const tripoint& )
-{
-    struct parasite_chances pcs = {0, 0, 0, 0};
-    pcs.tapeworm = 512;
-    pcs.bloodworms = 256;
-    pcs.brainworms = 512;
-    pcs.paincysts = 128;
-    return raw_food(p, it, pcs);
-}
-
 #define STR(weak, medium, strong) (strength == 0 ? (weak) : strength == 1 ? (medium) : (strong))
 int alcohol(player *p, item *it, int strength)
 {
@@ -1035,11 +954,12 @@ int iuse::flusleep(player *p, item *it, bool, const tripoint& )
 
 int iuse::inhaler(player *p, item *it, bool, const tripoint& )
 {
-    p->remove_effect( effect_asthma);
-    p->add_msg_if_player(m_neutral, _("You take a puff from your inhaler."));
-    if (one_in(50)) {  // adverse reaction
-        p->add_msg_if_player(m_bad, _("Your heart begins to race."));
-        p->mod_fatigue(-10);
+    p->add_msg_if_player( m_neutral, _( "You take a puff from your inhaler." ) );
+    if( !p->remove_effect( effect_asthma) ) {
+        p->mod_fatigue( -3 ); // if we don't have asthma can be used as stimulant
+        if( one_in( 20 ) ) {   // with a small but significant risk of adverse reaction
+            p->add_effect( effect_shakes, 10 * rng( 2, 5 ) );
+        }
     }
     return it->type->charges_to_use();
 }
@@ -8219,13 +8139,13 @@ int iuse::cable_attach(player *p, item *it, bool, const tripoint& )
             const vpart_str_id vpid( it->typeId() );
 
             point vcoords = g->m.veh_part_coordinates( source_local );
-            vehicle_part source_part(vpid, vcoords.x, vcoords.y, it);
+            vehicle_part source_part( vpid, vcoords.x, vcoords.y, item( *it ) );
             source_part.target.first = target_global;
             source_part.target.second = target_veh->real_global_pos3();
             source_veh->install_part(vcoords.x, vcoords.y, source_part);
 
             vcoords = g->m.veh_part_coordinates( target_local );
-            vehicle_part target_part(vpid, vcoords.x, vcoords.y, it);
+            vehicle_part target_part( vpid, vcoords.x, vcoords.y, item( *it ) );
             target_part.target.first = source_global;
             target_part.target.second = source_veh->real_global_pos3();
             target_veh->install_part(vcoords.x, vcoords.y, target_part);
