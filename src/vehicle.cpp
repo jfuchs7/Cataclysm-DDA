@@ -30,7 +30,6 @@
 #include "weather.h"
 #include "map_iterator.h"
 
-#include <fstream>
 #include <sstream>
 #include <stdlib.h>
 #include <set>
@@ -291,7 +290,7 @@ bool vehicle::remote_controlled(player const &p) const
     return false;
 }
 
-void vehicle::load (std::ifstream &stin)
+void vehicle::load (std::istream &stin)
 {
     std::string type;
     getline(stin, type);
@@ -385,7 +384,7 @@ void vehicle::add_steerable_wheels()
     }
 }
 
-void vehicle::save (std::ofstream &stout)
+void vehicle::save (std::ostream &stout)
 {
     serialize(stout);
     stout << std::endl;
@@ -858,7 +857,7 @@ bool vehicle::interact_vehicle_locked()
             if (query_yn(_("You don't find any keys in the %s. Attempt to hotwire vehicle?"),
                             name.c_str())) {
                 ///\EFFECT_MECHANICS speeds up vehicle hotwiring
-                int mechanics_skill = g->u.skillLevel( skill_mechanics );
+                int mechanics_skill = g->u.get_skill_level( skill_mechanics );
                 int hotwire_time = 6000 / ((mechanics_skill > 0)? mechanics_skill : 1);
                 //assign long activity
                 g->u.assign_activity(ACT_HOTWIRE_CAR, hotwire_time, -1, INT_MIN, _("Hotwire"));
@@ -866,7 +865,7 @@ bool vehicle::interact_vehicle_locked()
                 point q = coord_translate(parts[0].mount);
                 g->u.activity.values.push_back(global_x() + q.x);//[0]
                 g->u.activity.values.push_back(global_y() + q.y);//[1]
-                g->u.activity.values.push_back(g->u.skillLevel( skill_mechanics ));//[2]
+                g->u.activity.values.push_back(g->u.get_skill_level( skill_mechanics ));//[2]
             } else {
                 if( has_security_working() && query_yn(_("Trigger the %s's Alarm?"), name.c_str()) ) {
                     is_alarm_on = true;
@@ -898,7 +897,7 @@ void vehicle::smash_security_system(){
     //controls and security must both be valid
     if (c >= 0 && s >= 0){
         ///\EFFECT_MECHANICS reduces chance of damaging controls when smashing security system
-        int skill = g->u.skillLevel( skill_mechanics );
+        int skill = g->u.get_skill_level( skill_mechanics );
         int percent_controls = 70 / (1 + skill);
         int percent_alarm = (skill+3) * 10;
         int rand = rng(1,100);
@@ -6357,8 +6356,8 @@ int vehicle::automatic_fire_turret( int p, item& gun  )
     tmp.set_fake( true );
     tmp.add_effect( effect_on_roof, 1 );
     tmp.name = rmp_format( _( "<veh_player>The %s" ), parts[ p ].name().c_str() );
-    tmp.skillLevel( gun.gun_skill() ).level( 8 );
-    tmp.skillLevel( skill_id( "gun" ) ).level(4);
+    tmp.set_skill_level( gun.gun_skill(), 8 );
+    tmp.set_skill_level( skill_id( "gun" ), 4 );
     tmp.recoil = abs(velocity) / 100 / 4;
     tmp.setpos( pos );
     tmp.str_cur = 16;
@@ -6865,6 +6864,8 @@ item vehicle_part::properties_to_item() const
 
     if( vpinfo.fuel_type == fuel_type_battery ) {
         tmp.charges = amount;
+    } else if( vpinfo.fuel_type == fuel_type_plutonium ) {
+        // Do nothing, itemized minireactors with plutonium in them are bugged
     } else if( !vpinfo.fuel_type.empty() && vpinfo.fuel_type != "null" && amount > 0 ) {
         tmp.emplace_back( vpinfo.fuel_type, calendar::turn, amount / fuel_charges_to_amount_factor( vpinfo.fuel_type ) );
     }

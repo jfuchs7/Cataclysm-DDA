@@ -3240,8 +3240,6 @@
         "coverage" : 65,
         "material_thickness" : 1
     },
-
-
     {
         "type" : "ARMOR",
         "id" : "chestwrap",
@@ -5362,7 +5360,7 @@
         "flags" : ["SUN_GLASSES"],
         "coverage" : 50,
         "material_thickness" : 1
-    },   
+    },
     {   "type" : "ARMOR",
         "id" : "hat_sombrero",
         "name" : "sombrero",
@@ -6504,7 +6502,16 @@
         "symbol" : "[",
         "bashing" : 5,
         "warmth" : 0,
-        "flags" : ["WAIST"]
+        "flags" : ["WAIST"],
+        "use_action" : {
+            "type": "holster",
+             "holster_prompt": "Stick what into your belt",
+             "holster_msg": "You tuck your %s into your %s",
+             "max_volume": 2,
+             "max_weight": 400,
+             "draw_cost": 60,
+             "flags": ["BELT_CLIP"]
+        }
     },
     {
         "type" : "ARMOR",
@@ -6787,7 +6794,6 @@
         "flags" : ["FANCY"]
     },
     {
-
         "type" : "ARMOR",
         "id" : "fc_hairpin",
         "name" : "fancy hairpin",

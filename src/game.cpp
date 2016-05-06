@@ -1517,12 +1517,12 @@ void game::rustCheck()
         }
 
         bool charged_bio_mem = u.has_active_bionic("bio_memory") && u.power_level > 25;
-        int oldSkillLevel = u.skillLevel(aSkill);
+        int oldSkillLevel = u.get_skill_level(aSkill.ident());
 
-        if (u.skillLevel(aSkill).rust(charged_bio_mem)) {
+        if (u.get_skill_level(aSkill.ident()).rust(charged_bio_mem)) {
             u.charge_power(-25);
         }
-        int newSkill = u.skillLevel(aSkill);
+        int newSkill = u.get_skill_level(aSkill.ident());
         if (newSkill < oldSkillLevel) {
             add_msg(m_bad, _("Your skill in %s has reduced to %d!"),
                     aSkill.name().c_str(), newSkill);
@@ -3590,22 +3590,9 @@ bool game::save_factions_missions_npcs()
     }
 
     std::string masterfile = world_generator->active_world->world_path + "/master.gsav";
-    try {
-        std::ofstream fout;
-        fout.exceptions(std::ios::badbit | std::ios::failbit);
-
-        fopen_exclusive(fout, masterfile.c_str());
-        if (!fout.is_open()) {
-            return true; //trick code into thinking that everything went okay
-        }
-
+    return write_to_file_exclusive( masterfile, [&]( std::ostream &fout ) {
         serialize_master(fout);
-        fclose_exclusive(fout, masterfile.c_str());
-        return true;
-    } catch (std::ios::failure &) {
-        popup(_("Failed to save factions to %s"), masterfile.c_str());
-        return false;
-    }
+    }, _( "factions data" ) );
 }
 
 bool game::save_artifacts()
@@ -3618,11 +3605,11 @@ bool game::save_maps()
 {
     try {
         m.save();
-        overmap_buffer.save(); // can throw std::ios::failure
-        MAPBUFFER.save(); // can throw std::ios::failure
+        overmap_buffer.save(); // can throw
+        MAPBUFFER.save(); // can throw
         return true;
-    } catch (std::ios::failure &) {
-        popup(_("Failed to save the maps"));
+    } catch( const std::exception &err ) {
+        popup( _( "Failed to save the maps: %s" ), err.what() );
         return false;
     }
 }
@@ -3630,47 +3617,26 @@ bool game::save_maps()
 bool game::save_uistate()
 {
     std::string savefile = world_generator->active_world->world_path + "/uistate.json";
-    try {
-        std::ofstream fout;
-        fout.exceptions(std::ios::badbit | std::ios::failbit);
-
-        fopen_exclusive(fout, savefile.c_str());
-        if (!fout.is_open()) {
-            return true; //trick game into thinking it was saved
-        }
-
+    return write_to_file_exclusive( savefile, [&]( std::ostream &fout ) {
         fout << uistate.serialize();
-        fclose_exclusive(fout, savefile.c_str());
-        return true;
-    } catch (std::ios::failure &) {
-        popup(_("Failed to save uistate to %s"), savefile.c_str());
-        return false;
-    }
+    }, _( "uistate data" ) );
 }
 
 bool game::save_player_data()
 {
     const std::string playerfile = world_generator->active_world->world_path + "/" + base64_encode(u.name);
-    try {
-        std::ofstream fout;
-        fout.exceptions(std::ios::failbit | std::ios::badbit);
 
-        fout.open(std::string(playerfile + ".sav").c_str());
+    const bool saved_data = write_to_file( playerfile + ".sav", [&]( std::ostream &fout ) {
         serialize(fout);
-        fout.close();
-        // weather
-        fout.open(std::string(playerfile + ".weather").c_str());
+    }, _( "player data" ) );
+    const bool saved_weather = write_to_file( playerfile + ".weather", [&]( std::ostream &fout ) {
         save_weather(fout);
-        fout.close();
-        // log
-        fout.open(std::string(playerfile + ".log").c_str());
+    }, _( "weather state" ) );
+    const bool saved_log = write_to_file( playerfile + ".log", [&]( std::ostream &fout ) {
         fout << u.dump_memorial();
-        fout.close();
-        return true;
-    } catch (std::ios::failure &err) {
-        popup(_("Failed to save player data"));
-        return false;
-    }
+    }, _( "player memorial" ) );
+
+    return saved_data && saved_weather && saved_log;
 }
 
 void game::dump_stats( const std::string& what )
@@ -3923,14 +3889,9 @@ void game::write_memorial_file(std::string sLastWords)
     memorial_file_path << ".txt";
 
     const std::string path_string = memorial_file_path.str();
-    std::ofstream memorial_file {path_string};
-    if (!memorial_file) {
-        dbg(D_ERROR) << "game:write_memorial_file: Unable to open " << path_string;
-        debugmsg("Could not open memorial file '%s'", path_string.c_str());
-        return;
-    }
-
-    u.memorial(memorial_file, sLastWords);
+    write_to_file( memorial_file_path.str(), [&]( std::ostream &fout ) {
+        u.memorial( fout, sLastWords );
+    }, _( "player memorial" ) );
 }
 
 void game::add_event(event_type type, int on_turn, int faction_id)
@@ -5071,9 +5032,9 @@ void game::list_missions()
             }
         }
 
-        draw_tab(w_missions, 7, _("ACTIVE MISSIONS"), (tab == 0) ? true : false);
-        draw_tab(w_missions, 30, _("COMPLETED MISSIONS"), (tab == 1) ? true : false);
-        draw_tab(w_missions, 56, _("FAILED MISSIONS"), (tab == 2) ? true : false);
+        draw_tab( w_missions, 7, _( "ACTIVE MISSIONS" ), tab == 0 );
+        draw_tab( w_missions, 30, _( "COMPLETED MISSIONS" ), tab == 1 );
+        draw_tab( w_missions, 56, _( "FAILED MISSIONS" ), tab == 2 );
 
         mvwputch(w_missions, 2, 0, BORDER_COLOR, LINE_OXXO); // |^
         mvwputch(w_missions, 2, FULL_SCREEN_WIDTH - 1, BORDER_COLOR, LINE_OOXX); // ^|
@@ -7174,7 +7135,7 @@ bool game::is_sheltered( const tripoint &p )
              ( veh && veh->is_inside(vpart) ) );
 }
 
-bool game::revive_corpse( const tripoint &p, const item &it )
+bool game::revive_corpse( const tripoint &p, item &it )
 {
     if (!it.is_corpse()) {
         debugmsg("Tried to revive a non-corpse.");
@@ -7186,11 +7147,18 @@ bool game::revive_corpse( const tripoint &p, const item &it )
     }
     monster critter( it.get_mtype()->id, p );
     critter.init_from_item( it );
-    critter.no_extra_death_drops = true;
+    if( critter.get_hp() < 1 ) {
+        // Failed reanimation due to corpse being too burned
+        it.active = false;
+        return false;
+    }
 
-    if (it.get_var( "zlave" ) == "zlave"){
-        critter.add_effect( effect_pacified, 1, num_bp, true);
-        critter.add_effect( effect_pet, 1, num_bp, true);
+    critter.no_extra_death_drops = true;
+    critter.add_effect( effect_downed, 5, num_bp, true );
+
+    if (it.get_var( "zlave" ) == "zlave" ) {
+        critter.add_effect( effect_pacified, 1, num_bp, true );
+        critter.add_effect( effect_pet, 1, num_bp, true );
     }
 
     if (it.get_var("no_ammo") == "no_ammo") {
@@ -7442,7 +7410,7 @@ void game::smash()
         const int mod_sta = ( (u.weapon.weight() / 100 ) + 20) * -1;
         u.mod_stat("stamina", mod_sta);
 
-        if (u.skillLevel( skill_melee ) == 0) {
+        if (u.get_skill_level( skill_melee ) == 0) {
             u.practice( skill_melee, rng(0, 1) * rng(0, 1));
         }
         if (u.weapon.made_of( material_id( "glass" ) ) &&
@@ -7580,7 +7548,7 @@ void game::exam_vehicle(vehicle &veh, const tripoint &p, int cx, int cy)
     vehint.exec(&veh);
     if (vehint.sel_cmd != ' ') {
         int time = 200;
-        int skill = u.skillLevel( skill_id( "mechanics" ) );
+        int skill = u.get_skill_level( skill_id( "mechanics" ) );
         int diff = 1;
         if (vehint.sel_vpart_info != NULL) {
             diff = vehint.sel_vpart_info->difficulty + 3;
@@ -11819,7 +11787,7 @@ void game::pldrive(int x, int y)
         ///\EFFECT_DEX increases chance of regaining control of a vehicle
 
         ///\EFFECT_DRIVING increases chance of regaining control of a vehicle
-        if (rng(0, veh->velocity) < u.dex_cur + u.skillLevel( skill_driving ) * 2) {
+        if (rng(0, veh->velocity) < u.dex_cur + u.get_skill_level( skill_driving ) * 2) {
             add_msg(_("You regain control of the %s."), veh->name.c_str());
             u.practice( skill_driving, veh->velocity / 5 );
             veh->velocity = int(veh->forward_velocity());
@@ -12331,7 +12299,7 @@ bool game::walk_move( const tripoint &dest_loc )
     ///\EFFECT_STR increases recoil recovery speed
 
     ///\EFFECT_GUN inreases recoil recovery speed
-    u.recoil -= int(u.str_cur / 2) + u.skillLevel( skill_id( "gun" ) );
+    u.recoil -= int(u.str_cur / 2) + u.get_skill_level( skill_id( "gun" ) );
     u.recoil = std::max( MIN_RECOIL * 2, u.recoil );
     u.recoil = int(u.recoil / 2);
     const int mcost_total = m.move_cost( dest_loc );
@@ -13222,11 +13190,11 @@ void game::vertical_move(int movez, bool force)
         ///\EFFECT_DEX increases chance of moving past monsters on stairs
 
         ///\EFFECT_DODGE increases chance of moving past monsters on stairs
-        int dexroll = dice(6, u.dex_cur + u.skillLevel( skill_dodge ) * 2);
+        int dexroll = dice(6, u.dex_cur + u.get_skill_level( skill_dodge ) * 2);
         ///\EFFECT_STR increases chance of moving past monsters on stairs
 
         ///\EFFECT_MELEE increases chance of moving past monsters on stairs
-        int strroll = dice(3, u.str_cur + u.skillLevel( skill_melee ) * 1.5);
+        int strroll = dice(3, u.str_cur + u.get_skill_level( skill_melee ) * 1.5);
         if (coming_to_stairs.size() > 4) {
             add_msg(_("The are a lot of them on the %s!"), m.tername(u.pos()).c_str());
             dexroll /= 4;
@@ -13398,11 +13366,48 @@ void game::vertical_move(int movez, bool force)
         shift_monsters( 0, 0, movez );
     }
 
+    std::vector<npc*> npcs_to_bring;
+    if( !m.has_zlevels() && abs( movez ) == 1 ) {
+        std::copy_if( active_npc.begin(), active_npc.end(), back_inserter( npcs_to_bring ),
+                      [this]( npc *np ) {
+            return np->is_friend() && rl_dist( np->pos(), u.pos() ) < 2;
+        } );
+    }
+
     u.moves -= move_cost;
 
     vertical_shift( z_after );
     if( !force ) {
         update_map( stairs.x, stairs.y );
+    }
+
+    if( !npcs_to_bring.empty() ) {
+        // Would look nicer randomly scrambled
+        auto candidates = closest_tripoints_first( 1, u.pos() );
+        std::remove_if( candidates.begin(), candidates.end(), [this]( const tripoint &c ) {
+            return !is_empty( c );
+        } );
+
+        for( npc *np : npcs_to_bring ) {
+            const auto found = std::find_if( candidates.begin(), candidates.end(),
+                [this, np]( const tripoint &c ) {
+                return !np->is_dangerous_field( m.field_at( c ) ) && m.tr_at( c ).is_benign();
+            } );
+
+            if( found != candidates.end() ) {
+                // @todo De-uglify
+                np->setpos( *found );
+                np->place_on_map();
+                np->setpos( *found );
+                candidates.erase( found );
+            }
+
+            if( candidates.empty() ) {
+                break;
+            }
+        }
+
+        reload_npcs();
     }
 
     if( rope_ladder ) {
@@ -13476,7 +13481,7 @@ tripoint game::find_or_make_stairs( map &mp, const int z_after, bool &rope_ladde
     if( u.has_trait( "WEB_RAPPEL" ) ) {
         if (query_yn(_("There is a sheer drop halfway down. Web-descend?"))) {
             rope_ladder = true;
-            if ((rng(4, 8)) < u.skillLevel( skill_dodge )) {
+            if ((rng(4, 8)) < u.get_skill_level( skill_dodge )) {
                 add_msg(_("You attach a web and dive down headfirst, flipping upright and landing on your feet."));
             } else {
                 add_msg(_("You securely web up and work your way down, lowering yourself safely."));
