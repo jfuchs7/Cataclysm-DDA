@@ -24,8 +24,7 @@ extern game *g;
 
 #ifdef TILES
 extern void try_sdl_update();
-extern void invalidate_map_framebuffer();
-extern void invalidate_overmap_framebuffer();
+extern void invalidate_all_framebuffers();
 extern void clear_window_area( WINDOW* win );
 #endif // TILES
 
@@ -36,6 +35,11 @@ extern bool tile_iso;
 
 extern const int savegame_version;
 extern int savegame_loading_version;
+
+enum class dump_mode {
+    TSV,
+    HTML
+};
 
 enum tut_type {
     TUT_NULL,
@@ -170,7 +174,7 @@ class game
         bool unserialize_master_legacy(std::istream &fin);  // for old load
 
         /** write stats of all loaded items of the given type to stdout */
-        void dump_stats( const std::string& what );
+        void dump_stats( const std::string& what, dump_mode mode );
 
         /** Returns false if saving failed. */
         bool save();
@@ -555,7 +559,7 @@ class game
          * charges of the liquid have been transferred.
          * `true` indicates some charges have been transferred (but not necessarily all of them).
          */
-        void handle_all_liquid( item liquid, int radius = 0 );
+        void handle_all_liquid( item liquid, int radius );
 
         /**
          * Consume / handle as much of the liquid as possible in varying ways. This function can
