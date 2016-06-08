@@ -3570,20 +3570,6 @@ void player::disp_status( WINDOW *w, WINDOW *w2 )
                            ( strain <= 0.2 ? c_yellow :
                              ( strain <= 0.4 ? c_ltred : c_red ) );
 
-        bool has_turrets = false;
-        for( unsigned int p = 0; p < veh->parts.size(); p++ ) {
-            if( veh->part_flag( p, "TURRET" ) ) {
-                has_turrets = true;
-                break;
-            }
-        }
-
-        if( has_turrets ) {
-            mvwprintz( w, 3, sideStyle ? 16 : 25, col_indf1, _( "Gun:" ) );
-            wprintz( w, veh->turret_mode ? c_ltred : c_ltblue,
-                     veh->turret_mode ? _( "auto" ) : _( "off " ) );
-        }
-
         //
         // Draw the speedometer.
         //
@@ -7983,7 +7969,7 @@ void player::suffer()
                 mod_pain(1);
             }
             else focus_pool --;
-        }    
+        }
     }
 
     if (has_trait("SUNBURN") && g->is_in_sunlight(pos()) && one_in(10)) {
@@ -8017,7 +8003,7 @@ void player::suffer()
         mod_dex_bonus(-4);
         add_miss_reason(_("You can't stand the sunlight!"), 4);
         mod_int_bonus(-4);
-        mod_per_bonus(-4); 
+        mod_per_bonus(-4);
     }
 
     if (has_trait("SORES")) {
@@ -12577,17 +12563,21 @@ void player::learn_recipe( const recipe * const rec, bool force )
 
 void player::assign_activity(activity_type type, int moves, int index, int pos, std::string name)
 {
-    if( !backlog.empty() && backlog.front().type == type && backlog.front().index == index &&
-        backlog.front().position == pos && backlog.front().name == name &&
-        !backlog.front().auto_resume) {
-        add_msg_if_player( _("You resume your task."));
+    assign_activity( player_activity( type, moves, index, pos, name ) );
+}
+
+void player::assign_activity( const player_activity &act, bool allow_resume )
+{
+    if( allow_resume && !backlog.empty() && backlog.front().can_resume_with( act, *this ) ) {
+        add_msg_if_player( _("You resume your task.") );
         activity = backlog.front();
         backlog.pop_front();
     } else {
         if( activity.type != ACT_NULL ) {
             backlog.push_front( activity );
         }
-        activity = player_activity(type, moves, index, pos, name);
+
+        activity = act;
     }
     if( this->moves <= activity.moves_left ) {
         activity.moves_left -= this->moves;
@@ -13329,26 +13319,27 @@ bool player::is_visible_in_range( const Creature &critter, const int range ) con
 std::vector<Creature *> player::get_visible_creatures( const int range ) const
 {
     return get_creatures_if( [this, range]( const Creature &critter ) -> bool {
-        return this != &critter && this->sees(critter) &&
-          rl_dist( this->pos(), critter.pos() ) <= range;
+        return this != &critter && pos() != critter.pos() && // @todo get rid of fake npcs (pos() check)
+          rl_dist( pos(), critter.pos() ) <= range && sees( critter );
     } );
 }
 
 std::vector<Creature *> player::get_targetable_creatures( const int range ) const
 {
     return get_creatures_if( [this, range]( const Creature &critter ) -> bool {
-        return this != &critter && ( this->sees(critter) || this->sees_with_infrared(critter) ) &&
-          rl_dist( this->pos(), critter.pos() ) <= range;
+        return this != &critter && pos() != critter.pos() && // @todo get rid of fake npcs (pos() check)
+          rl_dist( pos(), critter.pos() ) <= range &&
+          ( sees( critter ) || sees_with_infrared( critter ) );
     } );
 }
 
 std::vector<Creature *> player::get_hostile_creatures() const
 {
     return get_creatures_if( [this] ( const Creature &critter ) -> bool {
-        return this != &critter && this->sees(critter) && critter.attitude_to(*this) == A_HOSTILE;
+        return this != &critter && pos() != critter.pos() && // @todo get rid of fake npcs (pos() check)
+            critter.attitude_to( *this ) == A_HOSTILE && sees( critter );
     } );
 }
-
 
 void player::place_corpse()
 {

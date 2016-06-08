@@ -1623,8 +1623,8 @@ bool game::cancel_activity_or_ignore_query(const char *reason, ...)
     bool force_uc = OPTIONS["FORCE_CAPITAL_YN"];
     int ch = (int)' ';
 
-    std::string stop_message = text + u.activity.get_stop_phrase() +
-                               _(" (Y)es, (N)o, (I)gnore further distractions and finish.");
+    std::string stop_message = text + " " + u.activity.get_stop_phrase() + " " +
+                               _( "(Y)es, (N)o, (I)gnore further distractions and finish." );
 
     do {
         ch = popup(stop_message, PF_GET_KEY);
@@ -1654,7 +1654,7 @@ bool game::cancel_activity_query(const char *message, ...)
         }
         return false;
     }
-    if (query_yn("%s%s", text.c_str(), u.activity.get_stop_phrase().c_str())) {
+    if (query_yn("%s %s", text.c_str(), u.activity.get_stop_phrase().c_str())) {
         u.cancel_activity();
         return true;
     }
@@ -2895,7 +2895,9 @@ bool game::handle_action()
         }
 
         case ACTION_SELECT_FIRE_MODE:
-            cycle_item_mode( false );
+            if( u.is_armed() ) {
+                u.weapon.gun_cycle_mode();
+            }
             break;
 
         case ACTION_DROP:
@@ -5440,7 +5442,8 @@ void game::draw_ter( const tripoint &center, const bool looking, const bool draw
     }
 
     if( u.controlling_vehicle && !looking ) {
-        draw_veh_dir_indicator();
+        draw_veh_dir_indicator( false );
+        draw_veh_dir_indicator( true );
     }
     if(uquit == QUIT_WATCH) {
         // This should remove the flickering the bar receives
@@ -5460,7 +5463,7 @@ void game::draw_ter( const tripoint &center, const bool looking, const bool draw
 
 }
 
-tripoint game::get_veh_dir_indicator_location() const
+tripoint game::get_veh_dir_indicator_location( bool next ) const
 {
     if( !OPTIONS["VEHICLE_DIR_INDICATOR"] ) {
         return tripoint_min;
@@ -5469,17 +5472,18 @@ tripoint game::get_veh_dir_indicator_location() const
     if( !veh ) {
         return tripoint_min;
     }
-    rl_vec2d face = veh->face_vec();
+    rl_vec2d face = next ? veh->dir_vec() : veh->face_vec();
     float r = 10.0;
     return { static_cast<int>(r * face.x), static_cast<int>(r * face.y), u.pos().z };
 }
 
-void game::draw_veh_dir_indicator(void)
+void game::draw_veh_dir_indicator( bool next )
 {
-    tripoint indicator_offset = get_veh_dir_indicator_location();
+    tripoint indicator_offset = get_veh_dir_indicator_location( next );
     if( indicator_offset != tripoint_min ) {
+        auto col = next ? c_white : c_dkgray;
         mvwputch( w_terrain, POSY + indicator_offset.y - u.view_offset.y,
-                  POSX + indicator_offset.x - u.view_offset.x, c_white, 'X' );
+                  POSX + indicator_offset.x - u.view_offset.x, col, 'X' );
     }
 }
 
@@ -10948,27 +10952,6 @@ bool game::plfire( const tripoint &default_target )
     return res;
 }
 
-void game::cycle_item_mode( bool force_gun )
-{
-    if( u.is_armed() ) {
-        u.weapon.gun_cycle_mode();
-
-    } else if( !force_gun ) {
-        int part = -1;
-        vehicle *veh = m.veh_at( u.pos(), part );
-        if( veh == nullptr ) {
-            return;
-        }
-
-        part = veh->part_with_feature( part, "TURRET" );
-        if( part < 0 ) {
-            return;
-        }
-
-        veh->cycle_turret_mode( part, true );
-    }
-}
-
 // Helper for game::butcher
 void add_corpses_to_menu( uimenu &kmenu, map_stack &items,
     const std::vector<int> &indices, size_t &menu_index,
@@ -11698,54 +11681,88 @@ void game::pldrive(int x, int y)
             return;
         }
     } else {
-        if ( veh->all_parts_with_feature( "REMOTE_CONTROLS", true ).size() == 0 ) {
+        if ( veh->all_parts_with_feature( "REMOTE_CONTROLS", true ).empty() ) {
             add_msg(m_info, _("Can't drive this vehicle remotely. It has no working controls."));
             return;
         }
     }
 
     int turn_delta = 15 * x;
-    if (turn_delta != 0) {
+    const float handling_diff = veh->handling_difficulty();
+    if( turn_delta != 0 ) {
         float eff = veh->steering_effectiveness();
-        if (eff < 0) {
-            add_msg(m_info, _("This vehicle has no steering system installed, you can't turn it."));
+        if( eff < 0 ) {
+            add_msg( m_info, _("This vehicle has no steering system installed, you can't turn it.") );
             return;
         }
 
-        turn_delta = round(turn_delta * eff);
-        if (turn_delta == 0) {
-            add_msg(m_bad, _("The steering is completely broken!"));
-            // Maybe not return here and let them find out the hard way?
+        if( eff == 0 ) {
+            add_msg( m_bad, _("The steering is completely broken!") );
             return;
+        }
+
+        // If you've got more moves than speed, it's most likely time stop
+        // Let's get rid of that
+        u.moves = std::min( u.moves, u.get_speed() );
+
+        ///\EFFECT_DEX reduces chance of losing control of vehicle when turning
+
+        ///\EFFECT_PER reduces chance of losing control of vehicle when turning
+
+        ///\EFFECT_DRIVING reduces chance of losing control of vehicle when turning
+        float skill = std::min( 10.0f, u.get_skill_level( skill_driving ) + ( u.get_dex() + u.get_per() ) / 10.0f );
+        float penalty = rng_float( 0.0f, handling_diff ) - skill;
+        int cost;
+        if( penalty > 0.0f ) {
+            // At 10 penalty (rather hard to get), we're taking 4 turns per turn
+            cost = 100 * ( 1.0f + penalty / 2.5f );
+        } else {
+            // At 10 skill, with a perfect vehicle, we could turn up to 3 times per turn
+            cost = std::max( u.get_speed(), 100 ) * ( 1.0f - ( -penalty / 10.0f ) * 2 / 3 );
+        }
+ 
+        if( penalty > skill || cost > 400 ) {
+            add_msg( m_warning, _("You fumble with the %s's controls."), veh->name.c_str() );
+            // Anything from a wasted attempt to 2 turns in the intended direction
+            turn_delta *= rng( 0, 2 );
+            // Also wastes next turn
+            cost = std::max( cost, u.moves + 100 );
+        } else if( one_in( 10 ) ) {
+            // Don't warn all the time or it gets spammy
+            if( cost >= u.get_speed() * 2 ) {
+                add_msg( m_warning, _( "It takes you a very long time to steer that vehicle!" ) );
+            } else if( cost >= u.get_speed() * 1.5f ) {
+                add_msg( m_warning, _( "It takes you a long time to steer that vehicle!" ) );
+            }
+        }
+
+        veh->turn( turn_delta );
+
+        // At most 3 turns per turn, because otherwise it looks really weird and jumpy
+        u.moves -= std::max( cost, u.get_speed() / 3 + 1 );
+    }
+
+    if( y != 0 ) {
+        int thr_amount = 10 * 100;
+        if( veh->cruise_on ) {
+            veh->cruise_thrust( -y * thr_amount );
+        } else {
+            veh->thrust( -y );
+            u.moves = std::min( u.moves, 0 );
         }
     }
 
-    int thr_amount = 10 * 100;
-    if (veh->cruise_on) {
-        veh->cruise_thrust(-y * thr_amount);
-    } else {
-        veh->thrust(-y);
-    }
-    veh->turn(turn_delta);
-    if (veh->skidding && veh->valid_wheel_config()) {
+    if( veh->skidding && veh->valid_wheel_config() ) {
         ///\EFFECT_DEX increases chance of regaining control of a vehicle
 
         ///\EFFECT_DRIVING increases chance of regaining control of a vehicle
-        if (rng(0, veh->velocity) < u.dex_cur + u.get_skill_level( skill_driving ) * 2) {
+        if( handling_diff * rng( 1, 10 ) < u.dex_cur + u.get_skill_level( skill_driving ) * 2 ) {
             add_msg(_("You regain control of the %s."), veh->name.c_str());
             u.practice( skill_driving, veh->velocity / 5 );
             veh->velocity = int(veh->forward_velocity());
             veh->skidding = false;
             veh->move.init(veh->turn_dir);
         }
-    }
-    // Don't spend turns to adjust cruise speed.
-    if (x != 0 || !veh->cruise_on) {
-        u.moves = 0;
-    }
-
-    if (x != 0 && veh->velocity != 0 && one_in(10)) {
-        u.practice( skill_driving, 1 );
     }
 }
 
@@ -14017,6 +14034,37 @@ void game::spawn_mon(int /*shiftx*/, int /*shifty*/)
     }
 }
 
+// Helper function for game::wait().
+static int convert_wait_chosen_to_turns( int choice ) {
+    const int iHour = calendar::turn.hours();
+
+    switch( choice ) {
+    case 1:
+        return MINUTES( 5 );
+    case 2:
+        return MINUTES( 30 );
+    case 3:
+        return HOURS( 1 );
+    case 4:
+        return HOURS( 2 );
+    case 5:
+        return HOURS( 3 );
+    case 6:
+        return HOURS( 6 );
+    case 7:
+        return HOURS( ((iHour <= 6) ? 6 - iHour : 24 - iHour + 6) );
+    case 8:
+        return HOURS( ((iHour <= 12) ? 12 - iHour : 12 - iHour + 6) );
+    case 9:
+        return HOURS( ((iHour <= 18) ? 18 - iHour : 18 - iHour + 6) );
+    case 10:
+        return HOURS( ((iHour <= 24) ? 24 - iHour : 24 - iHour + 6) );
+    case 11:
+    default:
+        return 999999999;
+    }
+}
+
 void game::wait()
 {
     const bool bHasWatch = u.has_watch();
@@ -14045,51 +14093,16 @@ void game::wait()
     as_m.entries.push_back(uimenu_entry(12, true, 'q', _("Exit")));
     as_m.query(); /* calculate key and window variables, generate window, and loop until we get a valid answer */
 
-    const int iHour = calendar::turn.hours();
-
-    int time = 0;
-    activity_type actType = ACT_WAIT;
-
-    switch (as_m.ret) {
-    case 1:
-        time = 5000;
-        break;
-    case 2:
-        time = 30000;
-        break;
-    case 3:
-        time = 60000;
-        break;
-    case 4:
-        time = 120000;
-        break;
-    case 5:
-        time = 180000;
-        break;
-    case 6:
-        time = 360000;
-        break;
-    case 7:
-        time = 60000 * ((iHour <= 6) ? 6 - iHour : 24 - iHour + 6);
-        break;
-    case 8:
-        time = 60000 * ((iHour <= 12) ? 12 - iHour : 12 - iHour + 6);
-        break;
-    case 9:
-        time = 60000 * ((iHour <= 18) ? 18 - iHour : 18 - iHour + 6);
-        break;
-    case 10:
-        time = 60000 * ((iHour <= 24) ? 24 - iHour : 24 - iHour + 6);
-        break;
-    case 11:
-        time = 999999999;
-        actType = ACT_WAIT_WEATHER;
-        break;
-    default:
+    if( as_m.ret < 1 || as_m.ret > 11 ) {
         return;
     }
 
-    u.assign_activity(actType, time, 0);
+    int chosen_turns = convert_wait_chosen_to_turns( as_m.ret );
+    activity_type actType = ( as_m.ret == 11 ) ? ACT_WAIT_WEATHER : ACT_WAIT;
+
+    constexpr int turns_to_moves = 100;
+    player_activity new_act( actType, chosen_turns * turns_to_moves, 0 );
+    u.assign_activity( new_act, false );
     u.rooted_message();
 }
 
