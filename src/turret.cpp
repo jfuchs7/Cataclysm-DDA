@@ -6,9 +6,13 @@
 #include "itype.h"
 #include "veh_type.h"
 #include "npc.h"
+#include "projectile.h"
 #include "messages.h"
 #include "translations.h"
 #include "ui.h"
+
+#include <algorithm>
+#include <numeric>
 
 static const itype_id fuel_type_battery( "battery" );
 const efftype_id effect_on_roof( "on_roof" );
@@ -209,8 +213,6 @@ bool vehicle::turrets_aim()
 
     // fake gun item to aim
     item pointer( "vehicle_pointer" );
-    pointer.set_curammo( "pointer_fake_ammo" );
-    pointer.ammo_data()->ammo->range = range;
 
     tripoint pos = g->u.pos();
     std::vector<tripoint> trajectory;

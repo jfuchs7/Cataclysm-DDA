@@ -253,12 +253,8 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
     std::string info( bool showtext = false) const;
     std::string info( bool showtext, std::vector<iteminfo> &dump ) const;
 
-    /**
-     * Burns the item at point p.
-     * Returns true if the item was destroyed.
-     * May add items to drops.
-     */
-    bool burn( const tripoint &p, fire_data &bd, std::vector<item> &drops );
+    /** Burns the item. Returns true if the item was destroyed. */
+    bool burn( fire_data &bd );
 
  // Returns the category of this item.
  const item_category &get_category() const;
@@ -439,10 +435,10 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
     bool is_container() const;
     /** Whether this is a container which can be used to store liquids. */
     bool is_watertight_container() const;
-    /** Whether this is sealable container which can be resealed after removing part of it's content */
-    bool is_sealable_container() const;
     /** Whether this item has no contents at all. */
     bool is_container_empty() const;
+    /** Whether removing this item's contents will permanently alter it. */
+    bool is_non_resealable_container() const;
     /**
      * Whether this item has no more free capacity for its current content.
      * @param allow_bucket Allow filling non-sealable containers
@@ -466,6 +462,12 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      */
     long get_remaining_capacity_for_liquid( const item &liquid, bool allow_bucket = false ) const;
     /**
+     * It returns the total capacity (volume) of the container. This is a volume,
+     * use @ref liquid_charges (of a liquid item) to translate that volume to the
+     * number charges of a liquid that can be store in it.
+     */
+    long get_container_capacity() const;
+    /**
      * Puts the given item into this one, no checks are performed.
      */
     void put_in( item payload );
@@ -484,7 +486,8 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
      * Returns this item into its default container. If it does not have a default container,
      * returns this. It's intended to be used like \code newitem = newitem.in_its_container();\endcode
      */
-    item in_its_container(); // TODO: make this const
+    item in_its_container() const;
+    item in_container( const itype_id &container_type ) const;
     /*@}*/
 
     /*@{*/
@@ -676,7 +679,7 @@ public:
     void mark_as_used_by_player(const player &p);
     /** Marks the item as filthy, so characters with squeamish trait can't wear it.
     */
-    bool is_disgusting_for( const player &p ) const;
+    bool is_filthy() const;
     /**
      * This is called once each turn. It's usually only useful for active items,
      * but can be called for inactive items without problems.
@@ -739,6 +742,8 @@ public:
  bool is_food() const;                // Ignoring the ability to eat batteries, etc.
  bool is_food_container() const;      // Ignoring the ability to eat batteries, etc.
  bool is_ammo_container() const; // does this item contain ammo? (excludes magazines)
+ bool is_medication() const;            // Is it a medication that only pretends to be food?
+ bool is_medication_container() const;  // Does it contain medication that isn't actually food?
  bool is_bionic() const;
  bool is_magazine() const;
  bool is_ammo_belt() const;
@@ -838,22 +843,6 @@ public:
         bool can_holster ( const item& obj, bool ignore = false ) const;
 
         /**
-         * Sets the current ammo to nullptr. Note that it does not touch the charges or anything else.
-         */
-        void unset_curammo();
-        /**
-         * Set the current ammo from an item type id (not an ammo type id!). The type must have
-         * an ammo slot (@ref itype::ammo). If the type id is "null", the curammo is unset as by calling
-         * @ref unset_curammo.
-         */
-        void set_curammo( const itype_id &type );
-        /**
-         * Shortcut to set the current ammo to the type of the given item. This is the same as
-         * calling @ref set_curammo with item type id of the ammo item:
-         * \code set_curammo(ammo.typeId()) \endcode
-         */
-        void set_curammo( const item &ammo );
-        /**
          * Callback when a character starts wearing the item. The item is already in the worn
          * items vector and is called from there.
          */
@@ -875,6 +864,10 @@ public:
          * from worn vector or weapon slot. The item is considered already carried.
          */
         void on_pickup( Character &p );
+        /**
+         * Callback when contents of the item are affected in any way other than just processing.
+         */
+        void on_contents_changed();
         /**
          * Name of the item type (not the item), with proper plural.
          * This is only special when the item itself has a special name ("name" entry in

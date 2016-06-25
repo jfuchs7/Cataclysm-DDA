@@ -12,6 +12,7 @@
 #include "text_snippets.h"
 #include "material.h"
 #include "item_factory.h"
+#include "projectile.h"
 #include "item_group.h"
 #include "options.h"
 #include "uistate.h"
@@ -375,16 +376,22 @@ bool item::set_side (side s) {
     return true;
 }
 
-item item::in_its_container()
+item item::in_its_container() const
 {
-    if( type->default_container != "null" ) {
-        item ret( type->default_container, bday );
+    return in_container( type->default_container );
+}
+
+item item::in_container( const itype_id &cont ) const
+{
+    if( cont != "null" ) {
+        item ret( cont, bday );
+        ret.contents.push_back( *this );
         if( made_of( LIQUID ) && ret.is_container() ) {
             // Note: we can't use any of the normal normal container functions as they check the
             // container being suitable (seals, watertight etc.)
-            charges = liquid_charges( ret.type->container->contains );
+            ret.contents.back().charges = liquid_charges( ret.get_container_capacity() );
         }
-        ret.contents.push_back(*this);
+
         ret.invlet = invlet;
         return ret;
     } else {
@@ -394,10 +401,8 @@ item item::in_its_container()
 
 long item::liquid_charges( long units ) const
 {
-    if( is_ammo() ) {
-        return type->ammo->def_charges * units;
-    } else if( is_food() ) {
-        return type->comestible->def_charges * units;
+    if( is_ammo() || is_food() ) {
+        return std::max( type->stack_size, 1 ) * units;
     } else {
         return units;
     }
@@ -405,10 +410,8 @@ long item::liquid_charges( long units ) const
 
 long item::liquid_units( long charges ) const
 {
-    if( is_ammo() ) {
-        return charges / type->ammo->def_charges;
-    } else if( is_food() ) {
-        return charges / type->comestible->def_charges;
+    if( is_ammo() || is_food() ) {
+        return charges / std::max( type->stack_size, 1 );
     } else {
         return charges;
     }
@@ -480,9 +483,14 @@ bool item::merge_charges( const item &rhs )
     if( !count_by_charges() || !stacks_with( rhs ) ) {
         return false;
     }
+    // Prevent overflow when either item has "near infinite" charges.
+    if( charges >= INFINITE_CHARGES / 2 || rhs.charges >= INFINITE_CHARGES / 2 ) {
+        charges = INFINITE_CHARGES;
+        return true;
+    }
     // We'll just hope that the item counter represents the same thing for both items
     if( item_counter > 0 || rhs.item_counter > 0 ) {
-        item_counter = ( item_counter * charges + rhs.item_counter * rhs.charges ) / ( charges + rhs.charges );
+        item_counter = ( static_cast<double>( item_counter ) * charges + static_cast<double>( rhs.item_counter ) * rhs.charges ) / ( charges + rhs.charges );
     }
     charges += rhs.charges;
     return true;
@@ -1315,9 +1323,13 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                 }
                 buffer << it.front().to_string();
             }
+
+            const std::string dis_time = calendar::print_duration( dis_recipe->time / 100 );
+
             insert_separation_line();
-            info.push_back( iteminfo( "DESCRIPTION", _( "Disassembling this item might yield:" ) ) );
-            info.push_back( iteminfo( "DESCRIPTION", buffer.str().c_str() ) );
+            info.push_back( iteminfo( "DESCRIPTION",
+                string_format( _( "Disassembling this item takes %s and might yield: %s." ),
+                dis_time.c_str(), buffer.str().c_str() ) ) );
         }
     }
 
@@ -1535,7 +1547,7 @@ std::string item::info( bool showtext, std::vector<iteminfo> &info ) const
                 info.push_back( iteminfo( "DESCRIPTION",
                                           _( "* This piece of clothing <neutral>prevents</neutral> you from <info>going underwater</info> (including voluntary diving)." ) ) );
             }
-            if( is_disgusting_for( g->u ) ) {
+            if( is_filthy() ) {
                 info.push_back( iteminfo( "DESCRIPTION",
                                           _( "* This piece of clothing is <bad>filthy</bad>." ) ) );
             }
@@ -1943,6 +1955,8 @@ nc_color item::color_in_inventory() const
         ret = c_cyan;
     } else if(has_flag("LITCIG")) {
         ret = c_red;
+    } else if( is_filthy() ) {
+        ret = c_brown;
     } else if ( has_flag("LEAK_DAM") && has_flag("RADIOACTIVE") && damage > 0 ) {
         ret = c_ltgreen;
     } else if (active && !is_food() && !is_food_container()) { // Active items show up as yellow
@@ -2122,6 +2136,11 @@ void item::on_wield( player &p, int mv )
 
 void item::on_pickup( Character &p )
 {
+    // Fake characters are used to determine pickup weight and volume
+    if( p.is_fake() ) {
+        return;
+    }
+
     // TODO: artifacts currently only work with the player character
     if( &p == &g->u && type->artifact ) {
         g->add_artifact_messages( type->artifact->effects_carried );
@@ -2129,10 +2148,17 @@ void item::on_pickup( Character &p )
 
     if( is_bucket_nonempty() ) {
         for( const auto &it : contents ) {
-            g->m.add_item( p.pos(), it );
+            g->m.add_item_or_charges( p.pos(), it );
         }
 
         contents.clear();
+    }
+}
+
+void item::on_contents_changed()
+{
+    if( is_non_resealable_container() ) {
+        convert( type->container->unseals_into );
     }
 }
 
@@ -2274,7 +2300,7 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
         ret << _(" (fits)");
     }
 
-    if( is_disgusting_for( g->u ) ) {
+    if( is_filthy() ) {
         ret << _(" (filthy)" );
     }
 
@@ -3136,6 +3162,11 @@ int item::acid_resist( bool to_self ) const
 
 int item::fire_resist( bool to_self ) const
 {
+    if( to_self ) {
+        // Fire damages items in a different way
+        return INT_MAX;
+    }
+
     float resist = 0.0;
     if( is_null() ) {
         return 0.0;
@@ -3341,11 +3372,13 @@ bool item::is_ammo() const
 
 bool item::is_food(player const*u) const
 {
-    if (!u)
+    if( !u ) {
         return is_food();
+    }
 
-    if( is_null() )
+    if( is_null() ) {
         return false;
+    }
 
     if( type->comestible ) {
         return true;
@@ -3371,6 +3404,20 @@ bool item::is_food_container(player const*u) const
 bool item::is_food() const
 {
     return type->comestible != nullptr;
+}
+
+bool item::is_medication() const
+{
+    if( type->comestible == nullptr || type->comestible->comesttype != "MED" ) {
+        return false;
+    }
+
+    return true;
+}
+
+bool item::is_medication_container() const
+{
+    return !contents.empty() && contents.front().is_medication();
 }
 
 bool item::is_brewable() const
@@ -3471,9 +3518,9 @@ bool item::is_watertight_container() const
     return type->container && type->container->watertight && type->container->seals;
 }
 
-bool item::is_sealable_container() const
+bool item::is_non_resealable_container() const
 {
-    return type->container && type->container->seals;
+    return type->container && !type->container->seals && type->container->unseals_into != "null";
 }
 
 bool item::is_bucket() const
@@ -3484,7 +3531,7 @@ bool item::is_bucket() const
     return type->container != nullptr &&
            type->container->watertight &&
            !type->container->seals &&
-           !type->container->preserves;
+           type->container->unseals_into == "null";
 }
 
 bool item::is_bucket_nonempty() const
@@ -3551,7 +3598,7 @@ bool item::is_funnel_container(int &bigger_than) const
         return false;
     }
     // todo; consider linking funnel to item or -making- it an active item
-    if ( type->container->contains <= bigger_than ) {
+    if ( get_container_capacity() <= bigger_than ) {
         return false; // skip contents check, performance
     }
     if (
@@ -3559,7 +3606,7 @@ bool item::is_funnel_container(int &bigger_than) const
         contents.front().typeId() == "water" ||
         contents.front().typeId() == "water_acid" ||
         contents.front().typeId() == "water_acid_weak") {
-        bigger_than = type->container->contains;
+        bigger_than = get_container_capacity();
         return true;
     }
     return false;
@@ -3619,6 +3666,7 @@ bool item::spill_contents( Character &c )
     }
 
     while( !contents.empty() ) {
+        on_contents_changed();
         if( contents.front().made_of( LIQUID ) ) {
             if( !g->handle_liquid_from_container( *this, 1 ) ) {
                 return false;
@@ -4717,14 +4765,17 @@ bool item::reload( player &u, item_location loc, long qty )
         return true;
 
     } else {
-        obj->set_curammo( *ammo );
+        obj->curammo = item::find_type( ammo->typeId() );
 
         if( ammo_type() == "plutonium" ) {
+            // Warning: qty here refers to minimum of plutonium cells and capacity left
             // always consume at least one cell but never more than actually available
             auto cells = std::min( qty / PLUTONIUM_CHARGES + ( qty % PLUTONIUM_CHARGES != 0 ), ammo->charges );
             ammo->charges -= cells;
             // any excess is wasted rather than overfilling the obj
-            obj->charges += std::min( cells * PLUTONIUM_CHARGES, qty );
+            obj->charges += std::min( cells, qty ) * PLUTONIUM_CHARGES;
+            // Cap at max, because the above formula doesn't guarantee it
+            obj->charges = std::min( obj->charges, obj->ammo_capacity() );
         } else {
             qty = std::min( qty, ammo->charges );
             ammo->charges   -= qty;
@@ -4743,12 +4794,12 @@ bool item::reload( player &u, item_location loc, long qty )
     return true;
 }
 
-bool item::burn( const tripoint &, fire_data &frd, std::vector<item> &drops )
+bool item::burn( fire_data &frd )
 {
     const auto &mats = made_of();
-    int smoke_added = 0;
-    int time_added = 0;
-    int burn_added = 0;
+    float smoke_added = 0.0f;
+    float time_added = 0.0f;
+    float burn_added = 0.0f;
     const int vol = base_volume();
     for( const auto &m : mats ) {
         const auto &bd = m.obj().burn_data( frd.fire_intensity );
@@ -4757,7 +4808,8 @@ bool item::burn( const tripoint &, fire_data &frd, std::vector<item> &drops )
             return false;
         }
 
-        if( bd.chance_in_volume == 0 || vol == 0 || x_in_y( bd.chance_in_volume, vol ) ) {
+        if( bd.chance_in_volume == 0 || bd.chance_in_volume >= vol ||
+            x_in_y( bd.chance_in_volume, vol ) ) {
             time_added += bd.fuel;
             smoke_added += bd.smoke;
             burn_added += bd.burn;
@@ -4780,8 +4832,16 @@ bool item::burn( const tripoint &, fire_data &frd, std::vector<item> &drops )
     frd.fuel_produced += time_added;
     frd.smoke_produced += smoke_added;
 
-    if( burn_added < 0 ) {
+    if( burn_added <= 0 ) {
         return false;
+    }
+
+    if( count_by_charges() ) {
+        burn_added *= rng( type->stack_size / 2, type->stack_size );
+        charges -= roll_remainder( burn_added );
+        if( charges <= 0 ) {
+            return true;
+        }
     }
 
     if( is_corpse() ) {
@@ -4800,24 +4860,9 @@ bool item::burn( const tripoint &, fire_data &frd, std::vector<item> &drops )
         }
     }
 
-    if( !count_by_charges() ) {
-        burnt += burn_added;
-        bool destroyed = burnt >= vol * 3;
-        if( destroyed ) {
-            std::copy( contents.begin(), contents.end(),
-                       std::back_inserter( drops ) );
-        }
+    burnt += roll_remainder( burn_added );
 
-        return destroyed;
-    }
-
-    burn_added *= rng( type->stack_size / 2, type->stack_size );
-    if( charges <= burn_added ) {
-        return true;
-    }
-
-    charges -= burn_added;
-    return false;
+    return burnt >= vol * 3;
 }
 
 bool item::flammable() const
@@ -4907,6 +4952,14 @@ int item::getlight_emit() const
     return lumint;
 }
 
+long item::get_container_capacity() const
+{
+    if( !is_container() ) {
+        return 0;
+    }
+    return type->container->contains;
+}
+
 long item::get_remaining_capacity_for_liquid( const item &liquid, bool allow_bucket ) const
 {
     if ( has_valid_capacity_for_liquid( liquid, allow_bucket ) != L_ERR_NONE) {
@@ -4918,7 +4971,7 @@ long item::get_remaining_capacity_for_liquid( const item &liquid, bool allow_buc
         return ammo_capacity() - ammo_remaining();
     }
 
-    const auto total_capacity = liquid.liquid_charges( type->container->contains );
+    const auto total_capacity = liquid.liquid_charges( get_container_capacity() );
 
     long remaining_capacity = total_capacity;
     if (!contents.empty()) {
@@ -4961,7 +5014,7 @@ item::LIQUID_FILL_ERROR item::has_valid_capacity_for_liquid( const item &liquid,
     }
 
     if (!contents.empty()) {
-        const auto total_capacity = liquid.liquid_charges( type->container->contains);
+        const auto total_capacity = liquid.liquid_charges( get_container_capacity() );
         if( ( total_capacity - contents.front().charges) <= 0 ) {
             return L_ERR_FULL;
         }
@@ -5038,6 +5091,7 @@ bool item::fill_with( item &liquid, std::string &err, bool allow_bucket )
         put_in( liquid_copy );
     }
     liquid.charges -= amount;
+    on_contents_changed();
 
     return true;
 }
@@ -5369,42 +5423,6 @@ bool item::can_holster ( const item& obj, bool ignore ) const {
     }
 
     return true;
-}
-
-void item::unset_curammo()
-{
-    curammo = nullptr;
-}
-
-void item::set_curammo( const itype_id &type )
-{
-    if( type == "null" ) {
-        unset_curammo();
-        return;
-    }
-    const auto at = item_controller->find_template( type );
-    if( !at->ammo ) {
-        // Much code expects curammo to be a valid ammo, or null, make sure this assumption
-        // is correct
-        debugmsg( "Tried to set non-ammo type %s as curammo of %s", type.c_str(), tname().c_str() );
-        return;
-    }
-    curammo = at;
-}
-
-void item::set_curammo( const item &ammo )
-{
-    if( ammo.is_null() ) {
-        unset_curammo();
-        return;
-    }
-    const auto at = ammo.type;
-    if( !at->ammo ) {
-        debugmsg( "Tried to set non-ammo type %s as curammo of %s", ammo.type->id.c_str(),
-                  tname().c_str() );
-        return;
-    }
-    curammo = at;
 }
 
 std::string item::components_to_string() const
@@ -6001,6 +6019,6 @@ bool item_category::operator!=( const item_category &rhs ) const
     return !( *this == rhs );
 }
 
-bool item::is_disgusting_for( const player &p ) const {
-    return has_flag( "FILTHY" ) && p.has_trait( "SQUEAMISH" );
+bool item::is_filthy() const {
+    return has_flag( "FILTHY" );
 }

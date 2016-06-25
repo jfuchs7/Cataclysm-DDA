@@ -510,7 +510,7 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
          * Reduces and mutates du, prints messages about armor taking damage.
          * @return true if the armor was completely destroyed (and the item must be deleted).
          */
-        bool armor_absorb(damage_unit &du, item &armor);
+        bool armor_absorb( damage_unit &du, item &armor );
         /** Runs through all bionics and armor on a part and reduces damage through their armor_absorb */
         void absorb_hit(body_part bp, damage_instance &dam) override;
         /** Called after the player has successfully dodged an attack */
@@ -710,6 +710,15 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         /** Used for eating a particular item that doesn't need to be in inventory.
          *  Returns true if the item is to be removed (doesn't remove). */
         bool consume_item( item &eat );
+        /**
+         * Consumes an item as medication.
+         * Can be used to heal others (using `pos` argument), if med type handles that.
+         * Will complain if the item isn't actually a med type.
+         * @param target Item consumed. Must be a medication or a container of medication.
+         * @param pos Position to invoke the medicine on.
+         * @return Whether the target was fully consumed.
+         */
+        bool consume_med( item &target, const tripoint &pos );
 
         /** This block is to be moved to character.h */
         bool is_allergic( const item &food ) const;
@@ -987,6 +996,8 @@ class player : public Character, public JsonSerializer, public JsonDeserializer
         int has_morale( morale_type type ) const;
         void rem_morale( morale_type type, const itype *item_type = nullptr );
         bool has_morale_to_read() const;
+        /** Checks permanent morale for consistency and recovers it when an inconsistency is found. */
+        void check_and_recover_morale();
 
         /** Get the formatted name of the currently wielded item (if any) */
         std::string weapname() const;

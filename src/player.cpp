@@ -4167,6 +4167,39 @@ void player::pause()
         drench( 40, mfb( bp_foot_l ) | mfb( bp_foot_r ) | mfb( bp_leg_l ) | mfb( bp_leg_r ), false );
     }
 
+    // Try to put out clothing/hair fire
+    if( has_effect( effect_onfire ) ) {
+        int total_removed = 0;
+        int total_left = 0;
+        bool on_ground = has_effect( effect_downed );
+        for( size_t i = 0; i < num_bp; i++ ) {
+            body_part bp = body_part( i );
+            effect &eff = get_effect( effect_onfire, bp );
+            if( eff.is_null() ) {
+                continue;
+            }
+
+            // @todo Tools and skills
+            total_left += eff.get_duration();
+            // Being on the ground will smother the fire much faster because you can roll
+            int dur_removed = on_ground ? eff.get_duration() / 2 + 2 : 1;
+            eff.mod_duration( -dur_removed );
+            total_removed += dur_removed;
+        }
+
+        // Don't drop on the ground when the ground is on fire
+        if( total_left > 10 && !is_dangerous_fields( g->m.field_at( pos() ) ) ) {
+            add_effect( effect_downed, 2, num_bp, false, 0, true );
+            add_msg_player_or_npc( m_warning,
+                                   _( "You roll on the ground, trying to smother the fire!" ),
+                                   _( "<npcname> rolls on the ground!" ) );
+        } else if( total_removed > 0 ) {
+            add_msg_player_or_npc( m_warning,
+                                   _( "You attempt to put out the fire on you!" ),
+                                   _( "<npcname> attempts to put out the fire on them!" ) );
+        }
+    }
+
     if( is_npc() ) {
         // The stuff below doesn't apply to NPCs
         // search_surroundings should eventually do, though
@@ -4725,7 +4758,7 @@ dealt_damage_instance player::deal_damage(Creature* source, body_part bp, const 
     }
 
     on_hurt( source );
-    return dealt_damage_instance(dealt_dams);
+    return dealt_dams;
 }
 
 void player::mod_pain(int npain) {
@@ -5249,14 +5282,14 @@ void player::update_body( int from, int to )
     for( const auto& v : vitamin::all() ) {
         int rate = vitamin_rate( v.first );
         if( rate > 0 ) {
-            int qty = ticks_between( from, to, MINUTES( rate ) );
+            int qty = ticks_between( from, to, rate );
             if( qty > 0 ) {
                 vitamin_mod( v.first, 0 - qty );
             }
 
         } else if ( rate < 0 ) {
             // mutations can result in vitamins being generated (but never accumulated)
-            int qty = ticks_between( from, to, MINUTES( std::abs( rate ) ) );
+            int qty = ticks_between( from, to, std::abs( rate ) );
             if( qty > 0 ) {
                 vitamin_mod( v.first, qty );
             }
@@ -6396,16 +6429,7 @@ void player::hardcoded_effects(effect &it)
     bool sleeping = has_effect( effect_sleep );
     bool msg_trig = one_in(400);
     if( id == effect_onfire ) {
-        // TODO: this should be determined by material properties
-        if (!has_trait("M_SKIN2")) {
-            hurtall(3, nullptr);
-        }
-        remove_worn_items_with( []( item &tmp ) {
-            bool burnVeggy = (tmp.made_of( material_id( "veggy" ) ) || tmp.made_of( material_id( "paper" ) ));
-            bool burnFabric = ((tmp.made_of( material_id( "cotton" ) ) || tmp.made_of( material_id( "wool" ) )) && one_in(10));
-            bool burnPlastic = ((tmp.made_of( material_id( "plastic" ) )) && one_in(50));
-            return burnVeggy || burnFabric || burnPlastic;
-        } );
+        deal_damage( nullptr, bp, damage_instance( DT_HEAT, rng( intense, intense * 2 ) ) );
     } else if( id == effect_spores ) {
         // Equivalent to X in 150000 + health * 100
         if ((!has_trait("M_IMMUNE")) && (one_in(100) && x_in_y(intense, 150 + get_healthy() / 10)) ) {
@@ -8567,6 +8591,10 @@ void player::vomit()
 
 void player::drench( int saturation, int flags, bool ignore_waterproof )
 {
+    if( saturation < 1 ) {
+        return;
+    }
+
     // OK, water gets in your AEP suit or whatever.  It wasn't built to keep you dry.
     if( has_trait("DEBUG_NOTEMP") || has_active_mutation("SHELL2") ||
         ( !ignore_waterproof && is_waterproof(flags) ) ) {
@@ -8592,6 +8620,11 @@ void player::drench( int saturation, int flags, bool ignore_waterproof )
         if( body_wetness[i] < wetness_max ){
             body_wetness[i] = std::min( wetness_max, body_wetness[i] + wetness_increment );
         }
+    }
+
+    // Remove onfire effect
+    if( saturation > 10 || x_in_y( saturation, 10 ) ) {
+        remove_effect( effect_onfire );
     }
 }
 
@@ -8798,6 +8831,40 @@ void player::rem_morale(morale_type type, const itype* item_type)
 bool player::has_morale_to_read() const
 {
     return get_morale_level() >= -40;
+}
+
+void player::check_and_recover_morale()
+{
+    player_morale test_morale;
+
+    for( const auto &wit : worn ) {
+        test_morale.on_item_wear( wit );
+    }
+
+    for( const auto &mut : my_mutations ) {
+        test_morale.on_mutation_gain( mut.first );
+    }
+
+    for( auto &elem : effects ) {
+        for( auto &_effect_it : elem.second ) {
+            const effect &e = _effect_it.second;
+            test_morale.on_effect_int_change( e.get_id(), e.get_intensity(), e.get_bp() );
+        }
+    }
+
+    test_morale.on_stat_change( "hunger", get_hunger() );
+    test_morale.on_stat_change( "thirst", get_thirst() );
+    test_morale.on_stat_change( "fatigue", get_fatigue() );
+    test_morale.on_stat_change( "pain", get_pain() );
+    test_morale.on_stat_change( "pkill", get_painkiller() );
+    test_morale.on_stat_change( "perceived_pain", get_perceived_pain() );
+
+    apply_persistent_morale();
+
+    if( !morale->consistent_with( test_morale ) ) {
+        morale.reset( new player_morale( test_morale ) ); // Recover consistency
+        add_msg( m_debug, "%s morale was recovered.", disp_name( true ).c_str() );
+    }
 }
 
 void player::process_active_items()
@@ -9154,9 +9221,9 @@ std::list<item> player::use_charges( const itype_id& what, long qty )
 
     } else if( what == "UPS" ) {
         if( power_level > 0 && has_active_bionic( "bio_ups" ) ) {
-            auto bio = std::min( long( power_level ) , qty / 10 + ( qty % 10 != 0 ) );
+            auto bio = std::min( long( power_level ), qty );
             charge_power( -bio );
-            qty -= std::min( qty, bio * 10 );
+            qty -= std::min( qty, bio );
         }
 
         auto adv = charges_of( "adv_UPS_off", ceil( qty * 0.6 ) );
@@ -9289,6 +9356,44 @@ int player::drink_from_hands(item& water) {
 }
 
 
+// @todo Properly split meds and food instead of hacking around
+bool player::consume_med( item &target, const tripoint &pos )
+{
+    item *the_med = nullptr;
+    if( target.is_medication_container() ) {
+        the_med = &target.contents.front();
+    } else if( target.is_medication() ) {
+        the_med = &target;
+    } else {
+        debugmsg( "%s tried to use a %s as medication", name.c_str(), target.tname().c_str() );
+        return false;
+    }
+
+    auto req_tool = item::find_type( the_med->type->comestible->tool );
+    if( req_tool->tool ) {
+        if( !( has_amount( req_tool->id, 1 ) && has_charges( req_tool->id, req_tool->tool->charges_per_use ) ) ) {
+            add_msg_if_player( m_info, _( "You need a %s to consume that!" ), req_tool->nname( 1 ).c_str() );
+            return false;
+        }
+        use_charges( req_tool->id, req_tool->tool->charges_per_use );
+    }
+
+    long amount_used = 1;
+    if( the_med->type->has_use() ) {
+        amount_used = the_med->type->invoke( this, the_med, pos );
+        if( amount_used <= 0 ) {
+            return false;
+        }
+    }
+
+    // @todo Get the target it was used on
+    // Otherwise injecting someone will give us addictions etc.
+    consume_effects( *the_med );
+    mod_moves( -250 );
+    the_med->charges -= amount_used;
+    return the_med->charges <= 0;
+}
+
 bool player::consume_item( item &target )
 {
     if( target.is_null() ) {
@@ -9300,7 +9405,8 @@ bool player::consume_item( item &target )
         return false;
     }
     item *to_eat = nullptr;
-    if( target.is_food_container( this ) ) {
+    bool in_container = target.is_food_container( this );
+    if( in_container ) {
         to_eat = &target.contents.front();
     } else if( target.is_food( this ) ) {
         to_eat = &target;
@@ -9312,34 +9418,14 @@ bool player::consume_item( item &target )
         return false;
     }
 
-    int amount_used = 1;
-
-    if( to_eat->is_food() ) {
+    if( to_eat->is_medication() ) {
+        return consume_med( target, pos() );
+    } else if( to_eat->is_food() ) {
         if( to_eat->type->comestible->comesttype == "FOOD" ||
             to_eat->type->comestible->comesttype == "DRINK") {
             if( !eat( *to_eat ) ) {
                 return false;
             }
-
-        } else if( to_eat->type->comestible->comesttype == "MED" ) {
-            auto req_tool = item::find_type( to_eat->type->comestible->tool );
-            if( req_tool->tool ) {
-                if( !( has_amount( req_tool->id, 1 ) && has_charges( req_tool->id, req_tool->tool->charges_per_use ) ) ) {
-                    add_msg_if_player( m_info, _( "You need a %s to consume that!" ), req_tool->nname(1).c_str() );
-                    return false;
-                }
-                use_charges( req_tool->id, req_tool->tool->charges_per_use );
-            }
-
-            if( to_eat->type->has_use() ) {
-                amount_used = to_eat->type->invoke( this, to_eat, pos() );
-                if( amount_used <= 0 ) {
-                    return false;
-                }
-            }
-            consume_effects( *to_eat );
-            moves -= 250;
-
         } else {
             debugmsg("Unknown comestible type of item: %s\n", to_eat->tname().c_str());
         }
@@ -9388,7 +9474,11 @@ bool player::consume_item( item &target )
         moves -= 250;
     }
 
-    to_eat->charges -= amount_used;
+    to_eat->charges -= 1;
+    if( in_container ) {
+        target.on_contents_changed();
+    }
+
     return to_eat->charges <= 0;
 }
 
@@ -9566,7 +9656,7 @@ bool player::can_wear( const item& it, bool alert ) const
         return false;
     }
 
-    if( it.is_disgusting_for( g->u ) ) {
+    if( it.is_filthy() && has_trait( "SQUEAMISH" ) ) {
         if( alert ) {
             add_msg_if_player( m_info, _( "You can't wear that, it's filthy!" ) );
         }
@@ -9639,10 +9729,6 @@ bool player::can_unwield( const item& it, bool alert ) const
 bool player::wield( item& target )
 {
     if( !can_unwield( weapon ) || !can_wield( target ) ) {
-        return false;
-    }
-
-    if( weapon.is_bucket_nonempty() && !weapon.spill_contents( *this ) ) {
         return false;
     }
 
@@ -9930,29 +10016,46 @@ bool player::dispose_item( item& obj, const std::string& prompt )
         bool enabled;
         char invlet;
         int moves;
-        std::function<void()> action;
+        std::function<bool()> action;
     };
 
     std::vector<dispose_option> opts;
 
+    const bool bucket = obj.is_bucket_nonempty();
+
     opts.emplace_back( dispose_option {
-        _( "Store in inventory" ), volume_carried() + obj.volume() <= volume_capacity(), '1',
+        bucket ? _( "Spill contents and store in inventory" ) : _( "Store in inventory" ),
+        volume_carried() + obj.volume() <= volume_capacity(), '1',
         item_handling_cost( obj ) * INVENTORY_HANDLING_FACTOR,
-        [this,&obj]{
+        [this,&obj] {
+            if( !obj.spill_contents( *this ) ) {
+                return false;
+            }
+
             moves -= item_handling_cost( obj ) * INVENTORY_HANDLING_FACTOR;
             inv.add_item_keep_invlet( i_rem( &obj ) );
             inv.unsort();
+            return true;
         }
     } );
 
     opts.emplace_back( dispose_option {
-        _( "Drop item" ), true, '2', 0,
-        [this,&obj]{ g->m.add_item_or_charges( pos(), i_rem( &obj ) ); }
+        _( "Drop item" ), true, '2', 0, [this, &obj] {
+            g->m.add_item_or_charges( pos(), i_rem( &obj ) );
+            return true;
+        }
     } );
 
     opts.emplace_back( dispose_option {
-        _( "Wear item" ), can_wear( obj, false ), '3', item_wear_cost( obj ),
-        [this,&obj]{ wear_item( i_rem( &obj ) ); }
+        bucket ? _( "Spill contents and wear item" ) : _( "Wear item" ),
+        can_wear( obj, false ), '3', item_wear_cost( obj ),
+        [this, &obj] {
+            if( !obj.spill_contents( *this ) ) {
+                return false;
+            }
+
+            return wear_item( i_rem( &obj ) );
+        }
     } );
 
     for( auto& e : worn ) {
@@ -9961,7 +10064,9 @@ bool player::dispose_item( item& obj, const std::string& prompt )
             opts.emplace_back( dispose_option {
                 string_format( _( "Store in %s" ), e.tname().c_str() ), true, e.invlet,
                 item_store_cost( obj, e, false, ptr->draw_cost ),
-                [this,ptr,&e,&obj]{ ptr->store( *this, e, obj ); }
+                [this, ptr, &e, &obj]{
+                    return ptr->store( *this, e, obj );
+                }
             } );
         }
     }
@@ -9984,8 +10089,7 @@ bool player::dispose_item( item& obj, const std::string& prompt )
 
     menu.query();
     if( menu.ret >= 0 ) {
-        opts[ menu.ret ].action();
-        return true;
+        return opts[ menu.ret ].action();
     }
     return false;
 }
@@ -10557,8 +10661,8 @@ bool player::consume_charges( item& used, long qty )
         return false;
     }
 
-    if( !used.is_tool() && !used.is_food() ) {
-        debugmsg( "Tried to consume charges for non-tool, non-food item" );
+    if( !used.is_tool() && !used.is_food() && !used.is_medication() ) {
+        debugmsg( "Tried to consume charges for non-tool, non-food, non-med item" );
         return false;
     }
 
@@ -10567,7 +10671,7 @@ bool player::consume_charges( item& used, long qty )
     }
 
     // Consume comestibles destroying them if no charges remain
-    if( used.is_food() ) {
+    if( used.is_food() || used.is_medication() ) {
         used.charges -= qty;
         if( used.charges <= 0 ) {
             i_rem( &used );
@@ -10717,14 +10821,24 @@ bool player::invoke_item( item* used, const tripoint &pt )
         return false;
     }
 
+    // Food can't be invoked here - it is already invoked as a part of consumption
+    // Same for meds
+    if( used->is_food() || used->is_food_container() ||
+        used->is_medication() || used->is_medication_container() ) {
+        bool med = used->is_medication() || used->is_medication_container();
+        bool in_container = used->is_food_container() || used->is_medication_container();
+        bool consumed = med ? consume_med( *used, pt ) : consume_item( *used );
+        if( consumed ) {
+            i_rem( in_container ? &used->contents.front() : used );
+        }
+
+        return consumed;
+    }
+    
+
     if( used->type->use_methods.size() < 2 ) {
         const long charges_used = used->type->invoke( this, used, pt );
-        return ( used->is_tool() || used->is_food() ) && consume_charges( *used, charges_used );
-    }
-
-    // Food can't be invoked here - it is already invoked as a part of consumption
-    if( used->is_food() || used->is_food_container() ) {
-        return consume_item( *used );
+        return used->is_tool() && consume_charges( *used, charges_used );
     }
 
     uimenu umenu;
@@ -10743,7 +10857,8 @@ bool player::invoke_item( item* used, const tripoint &pt )
 
     const std::string &method = std::next( used->type->use_methods.begin(), choice )->first;
     long charges_used = used->type->invoke( this, used, pt, method );
-    return ( used->is_tool() || used->is_food() ) && consume_charges( *used, charges_used );
+
+    return used->is_tool() && consume_charges( *used, charges_used );
 }
 
 bool player::invoke_item( item* used, const std::string &method )
@@ -10764,12 +10879,21 @@ bool player::invoke_item( item* used, const std::string &method, const tripoint 
     }
 
     // Food can't be invoked here - it is already invoked as a part of consumption
-    if( used->is_food() || used->is_food_container() ) {
-        return consume_item( *used );
+    // Same for meds
+    if( used->is_food() || used->is_food_container() ||
+        used->is_medication() || used->is_medication_container() ) {
+        bool med = used->is_medication() || used->is_medication_container();
+        bool in_container = used->is_food_container() || used->is_medication_container();
+        bool consumed = med ? consume_med( *used, pt ) : consume_item( *used );
+        if( consumed ) {
+            i_rem( in_container ? &used->contents.front() : used );
+        }
+
+        return consumed;
     }
 
     long charges_used = actually_used->type->invoke( this, actually_used, pt, method );
-    return ( used->is_tool() || used->is_food() ) && consume_charges( *actually_used, charges_used );
+    return used->is_tool() && consume_charges( *actually_used, charges_used );
 }
 
 bool player::gunmod_remove( item &gun, item& mod )
@@ -11806,7 +11930,19 @@ int player::get_armor_fire(body_part bp) const
     return get_armor_type( DT_HEAT, bp );
 }
 
-bool player::armor_absorb(damage_unit& du, item& armor) {
+void destroyed_armor_msg( Character &who, const std::string &pre_damage_name )
+{
+    //~ %s is armor name
+    who.add_memorial_log( pgettext("memorial_male", "Worn %s was completely destroyed."),
+                          pgettext("memorial_female", "Worn %s was completely destroyed."),
+                          pre_damage_name.c_str() );
+    who.add_msg_player_or_npc( m_bad, _("Your %s is completely destroyed!"),
+                               _("<npcname>'s %s is completely destroyed!"),
+                               pre_damage_name.c_str() );
+}
+
+bool player::armor_absorb( damage_unit& du, item& armor )
+{
     if( rng( 1, 100 ) > armor.get_coverage() ) {
         return false;
     }
@@ -11820,7 +11956,7 @@ bool player::armor_absorb(damage_unit& du, item& armor) {
     du.amount -= mitigation; // mitigate the damage first
 
     // We want armor's own resistance to this type, not the resistance it grants
-    const int armors_own_resist = resistances( armor, true ).type_resist( du.type );
+    const int armors_own_resist = armor.damage_resist( du.type, true );
     if( armors_own_resist > 1000 ) {
         // This is some weird type that doesn't damage armors
         return false;
@@ -11876,18 +12012,7 @@ bool player::armor_absorb(damage_unit& du, item& armor) {
         armor.damage++;
     }
 
-    if( armor.damage >= 5 ) {
-        //~ %s is armor name
-        add_memorial_log( pgettext("memorial_male", "Worn %s was completely destroyed."),
-                          pgettext("memorial_female", "Worn %s was completely destroyed."),
-                          pre_damage_name.c_str() );
-        add_msg_player_or_npc( m_bad, _("Your %s is completely destroyed!"),
-                               _("<npcname>'s %s is completely destroyed!"),
-                               pre_damage_name.c_str() );
-        return true;
-    }
-
-    return false;
+    return armor.damage >= 5;
 }
 
 void player::absorb_hit(body_part bp, damage_instance &dam) {
@@ -11918,6 +12043,8 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
             }
         }
 
+        // Only the outermost armor can be set on fire
+        bool outermost = true;
         // The worn vector has the innermost item first, so
         // iterate reverse to damage the outermost (last in worn vector) first.
         for( auto iter = worn.rbegin(); iter != worn.rend(); ) {
@@ -11928,7 +12055,29 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
                 continue;
             }
 
-            if( armor_absorb( elem, armor ) ) {
+            const std::string pre_damage_name = armor.tname();
+            bool destroy = false;
+
+            // Heat damage can set armor on fire
+            // Even though it doesn't cause direct physical damage to it
+            if( outermost && elem.type == DT_HEAT && elem.amount >= 1.0f ) {
+                // @todo Different fire intensity values based on damage
+                fire_data frd{ 2, 0.0f, 0.0f };
+                destroy = armor.burn( frd );
+                int fuel = roll_remainder( frd.fuel_produced );
+                if( fuel > 0 ) {
+                    add_effect( effect_onfire, fuel + 1, bp );
+                }
+            }
+
+            if( !destroy ) {
+                destroy = armor_absorb( elem, armor );
+            }
+
+            if( destroy ) {
+                SCT.add( posx(), posy(), NORTH, remove_color_tags( pre_damage_name ),
+                         m_neutral, _( "destroyed" ), m_info);
+                destroyed_armor_msg( *this, pre_damage_name );
                 armor_destroyed = true;
                 armor.on_takeoff( *this );
                 worn_remains.insert( worn_remains.end(), armor.contents.begin(), armor.contents.end() );
@@ -11938,6 +12087,7 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
                 iter = decltype(iter)( worn.erase( --iter.base() ) );
             } else {
                 ++iter;
+                outermost = false;
             }
         }
 
@@ -12530,6 +12680,7 @@ bool player::wield_contents( item *container, int pos, int factor, bool effects 
 
     weapon = std::move( *target );
     container->contents.erase( target );
+    container->on_contents_changed();
 
     inv.assign_empty_invlet( weapon, true );
     last_item = itype_id( weapon.type->id );
